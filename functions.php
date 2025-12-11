@@ -93,3 +93,58 @@ function require_csrf(): void
         }
     }
 }
+function detect_country(string $title): ?string {
+    // Normalizuojame pavadinimą paieškai (mažosios raidės)
+    $t = mb_strtolower($title);
+
+    // Žodynas: 'PAIEŠKOS ŽODIS' => 'STANDARTINIS PAVADINIMAS'
+    // Svarbu: specifinius žodžius rašyti aukščiau (pvz. 'Great Britain' prieš 'Britain')
+    $map = [
+        // Lietuva
+        'lietuva' => 'Lietuva', 'lithuania' => 'Lietuva', 'litauen' => 'Lietuva',
+        
+        // JAV
+        'jav' => 'JAV', 'usa' => 'JAV', 'america' => 'JAV', 'united states' => 'JAV',
+        
+        // Vokietija
+        'vokietija' => 'Vokietija', 'germany' => 'Vokietija', 'deutschland' => 'Vokietija', 'dr' => 'Vokietija', 'frg' => 'Vokietija', 'gdr' => 'Vokietija',
+        
+        // Lenkija
+        'lenkija' => 'Lenkija', 'poland' => 'Lenkija', 'polska' => 'Lenkija',
+        
+        // Rusija / SSRS
+        'rusija' => 'Rusija', 'russia' => 'Rusija', 'ssrs' => 'SSRS', 'ussr' => 'SSRS', 'cccp' => 'SSRS',
+        
+        // Latvija / Estija
+        'latvija' => 'Latvija', 'latvia' => 'Latvija',
+        'estija' => 'Estija', 'estonia' => 'Estija',
+        
+        // Jungtinė Karalystė
+        'didžioji britanija' => 'Didžioji Britanija', 'great britain' => 'Didžioji Britanija', 'uk' => 'Didžioji Britanija', 'england' => 'Didžioji Britanija',
+        
+        // Kitos populiarios
+        'prancūzija' => 'Prancūzija', 'france' => 'Prancūzija',
+        'italija' => 'Italija', 'italy' => 'Italija',
+        'ispanija' => 'Ispanija', 'spain' => 'Ispanija',
+        'kinija' => 'Kinija', 'china' => 'Kinija',
+        'japonija' => 'Japonija', 'japan' => 'Japonija',
+        'kanada' => 'Kanada', 'canada' => 'Kanada',
+        'australija' => 'Australija', 'australia' => 'Australija',
+        'suomija' => 'Suomija', 'finland' => 'Suomija',
+        'švedija' => 'Švedija', 'sweden' => 'Švedija',
+        'norvegija' => 'Norvegija', 'norway' => 'Norvegija',
+        'ukraina' => 'Ukraina', 'ukraine' => 'Ukraina',
+        'baltarusija' => 'Baltarusija', 'belarus' => 'Baltarusija',
+    ];
+
+    foreach ($map as $search => $standard) {
+        // Tikriname ar žodis yra pavadinime. 
+        // Naudojame tarpus aplink, kad nerastų žodžio viduryje kito žodžio (pvz 'us' žodyje 'plus')
+        // Bet paprastumo dėlei čia naudojame paprastą paiešką, nes šalių pavadinimai retai būna kitų žodžių dalys.
+        if (mb_strpos($t, $search) !== false) {
+            return $standard;
+        }
+    }
+
+    return null; // Šalis neatpažinta
+}
