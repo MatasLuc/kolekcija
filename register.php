@@ -2,7 +2,6 @@
 require_once __DIR__ . '/partials.php';
 
 $error = '';
-$success = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $name = trim($_POST['name'] ?? '');
@@ -25,7 +24,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':password' => $hash,
                 ':role' => 'user'
             ]);
-            $success = 'Registracija sėkminga! Galite prisijungti.';
+            flash('success', 'Registracija sėkminga! Galite prisijungti.');
+            header('Location: login.php');
+            exit;
         }
     }
 }
@@ -37,7 +38,6 @@ render_nav();
     <div class="card form-card">
         <h2>Registruotis</h2>
         <?php if ($error): ?><div class="alert error"><?php echo e($error); ?></div><?php endif; ?>
-        <?php if ($success): ?><div class="alert success"><?php echo e($success); ?></div><?php endif; ?>
         <form method="post">
             <label for="name">Vardas</label>
             <input id="name" name="name" type="text" required>

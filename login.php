@@ -2,6 +2,7 @@
 require_once __DIR__ . '/partials.php';
 
 $error = '';
+$flashSuccess = flash('success');
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = trim($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
@@ -27,6 +28,9 @@ render_nav();
 <section class="section">
     <div class="card form-card">
         <h2>Prisijungti</h2>
+        <?php if ($flashSuccess): ?>
+            <div class="alert success"><?php echo e($flashSuccess); ?></div>
+        <?php endif; ?>
         <?php if ($error): ?>
             <div class="alert error"><?php echo e($error); ?></div>
         <?php endif; ?>
