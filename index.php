@@ -73,10 +73,9 @@ render_nav();
         </a>
     </div>
 </section>
-
 <section class="section">
-    <div class="cards">
-        <div class="card">
+    <div class="contact-block">
+        <div class="contact-info">
             <h3>Kontaktai</h3>
             <p>Mes pasirengę atsakyti į klausimus apie pirkimus, pardavimus ar bendradarbiavimą.</p>
             <ul>
@@ -84,15 +83,15 @@ render_nav();
                 <li>El. paštas: <strong>e.kolekcija@gmail.com</strong></li>
             </ul>
         </div>
-        <div class="card">
+        
+        <div class="contact-form-wrapper">
             <h3>Užklausa</h3>
-            <form action="#" method="post" onsubmit="alert('Tai demonstracinė forma. Prijunkite el. paštą arba API, kad gautumėte užklausas.'); return false;">
-                <label for="contact-email">El. paštas</label>
+            <form action="#" method="post" onsubmit="alert('Tai demonstracinė forma.'); return false;">
+                <label for="contact-email">Jūsų el. paštas</label>
                 <input id="contact-email" type="email" placeholder="vardas@pastas.lt" required>
-                <button type="submit">Patvirtinti</button>
+                <button type="submit">Siųsti žinutę</button>
             </form>
         </div>
     </div>
 </section>
-
 <?php render_footer(); ?>
