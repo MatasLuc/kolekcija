@@ -138,96 +138,131 @@ a:hover { text-decoration: underline; }
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
 }
 
-/* --- Atnaujinta Partnerių Sekcija --- */
+/* --- ATNAUJINTA PARTNERIŲ SEKCIJA (BE NUOTRAUKŲ) --- */
 
-.partners {
-    background-color: #f9f9f9; /* Šviesiai pilkas fonas atskyrimui */
-    padding-bottom: 80px;
+.partners-modern {
+    padding: 80px 8%;
+    background: #fff; /* Švarus baltas fonas */
+    margin-bottom: 0; /* Nuimame tarpą, jei jis buvo */
 }
 
+/* Antraštė */
 .partners-header {
+    margin-bottom: 50px;
     text-align: center;
-    max-width: 600px;
-    margin: 0 auto 40px;
 }
 
 .partners-header h2 {
-    font-size: 2rem;
-    margin-bottom: 10px;
+    font-size: 2.5rem;
+    margin: 0 0 10px 0;
+    font-weight: 900;
+    letter-spacing: -1px;
 }
 
 .partners-header p {
     color: var(--muted);
+    font-size: 1.1rem;
 }
 
-.partner-grid {
+/* Konteineris */
+.partners-container {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); /* Automatiškai prisitaikantis tinklelis */
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
     gap: 30px;
-    max-width: 900px;
+    max-width: 1000px;
     margin: 0 auto;
 }
 
-.partner-card {
+/* Partnerio kortelė */
+.partner-box {
+    position: relative;
     display: flex;
     flex-direction: column;
-    background: #fff;
-    border: 1px solid #e1e1e1;
-    border-radius: 16px;
-    overflow: hidden;
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    justify-content: space-between;
+    padding: 40px;
+    border-radius: 24px;
+    background: #f9f9f9;
     text-decoration: none;
-    height: 100%;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    border: 2px solid transparent; /* Rėmelis atsiranda užvedus */
+    overflow: hidden;
 }
 
-.partner-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 20px 40px rgba(0,0,0,0.08);
-    border-color: #d1d1d1;
+/* -- PIRKIS (ŽALIAS AKCENTAS) -- */
+.partner-box.pirkis {
+    --accent-color: #85bf27;
+    --bg-hover: #f4fbf0; 
 }
 
-/* Logotipo konteineris - kad logotipai "kvėpuotų" */
-.partner-logo-container {
-    height: 160px;
-    background: #fff;
+/* -- ALLEGRO (ORANŽINIS AKCENTAS) -- */
+.partner-box.allegro {
+    --accent-color: #ff5a00;
+    --bg-hover: #fff8f5; 
+}
+
+/* Hover efektai */
+.partner-box:hover {
+    transform: translateY(-8px);
+    background-color: var(--bg-hover);
+    border-color: var(--accent-color);
+    box-shadow: 0 20px 50px -15px var(--accent-color); /* Švytintis šešėlis */
+    text-decoration: none;
+}
+
+/* Turinys */
+.partner-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    font-weight: 700;
+    color: #999;
+    margin-bottom: 15px;
+    display: block;
+    transition: color 0.3s;
+}
+
+.partner-box:hover .partner-label {
+    color: var(--accent-color);
+}
+
+.partner-box h3 {
+    font-size: 2.2rem;
+    margin: 0 0 15px 0;
+    color: #111;
+    font-weight: 800;
+}
+
+.partner-box p {
+    color: #666;
+    margin: 0;
+    font-size: 1.1rem;
+    line-height: 1.5;
+}
+
+/* Rodyklė apačioje */
+.box-action {
+    margin-top: 40px;
     display: flex;
     align-items: center;
-    justify-content: center;
-    padding: 30px;
-    border-bottom: 1px solid #f0f0f0;
+    gap: 10px;
+    font-weight: 700;
+    color: #111;
+    font-size: 1.1rem;
 }
 
-.partner-logo-container img {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain; /* Svarbu: neleidžia iškraipyti logotipų */
-    filter: grayscale(100%); /* Nespalvoti ramybės būsenoje (modernu) */
-    opacity: 0.7;
-    transition: all 0.3s ease;
+.box-action .arrow {
+    transition: transform 0.3s ease;
 }
 
-/* Užvedus pelę atsiranda spalvos */
-.partner-card:hover .partner-logo-container img {
-    filter: grayscale(0%);
-    opacity: 1;
-    transform: scale(1.05);
+.partner-box:hover .box-action {
+    color: var(--accent-color);
 }
 
-.partner-info {
-    padding: 20px;
-    text-align: center;
+.partner-box:hover .arrow {
+    transform: translateX(6px);
 }
 
-.partner-info h3 {
-    margin: 0 0 5px;
-    font-size: 1.2rem;
-    color: #000;
-}
-
-.partner-info span {
-    font-size: 0.95rem;
-    color: #666;
-}
+/* --- KITA --- */
 
 .card {
     position: relative;
@@ -337,7 +372,7 @@ form button:hover { background: #333; }
     }
 }
 
-/* Kompiuteriams: 4 stulpeliai (kaip prašėte) */
+/* Kompiuteriams: 4 stulpeliai */
 @media (min-width: 1100px) {
     .news-list {
         grid-template-columns: repeat(4, 1fr);
@@ -393,21 +428,20 @@ form button:hover { background: #333; }
 .ghost.danger { color: #c00; border-color: #f1c1c1; }
 .muted { color: #777; }
 
-/* --- Naujas Kontaktų Blokas --- */
+/* --- Kontaktų Blokas --- */
 
 .contact-block {
-    background: #111; /* Tamsus fonas išskirtinumui */
-    color: #fff;      /* Baltas tekstas */
+    background: #111;
+    color: #fff;
     border-radius: 24px;
     padding: 50px;
     display: grid;
-    grid-template-columns: 1fr 1fr; /* Dvi lygios kolonos */
+    grid-template-columns: 1fr 1fr;
     gap: 60px;
     align-items: start;
     box-shadow: 0 20px 40px rgba(0,0,0,0.2);
 }
 
-/* Kairė pusė - info */
 .contact-info h3 {
     margin-top: 0;
     font-size: 2rem;
@@ -438,14 +472,12 @@ form button:hover { background: #333; }
     color: #fff;
 }
 
-/* Dešinė pusė - forma */
 .contact-form-wrapper h3 {
     margin-top: 0;
     font-size: 1.5rem;
     margin-bottom: 20px;
 }
 
-/* Pritaikome formos elementus tamsiam fonui */
 .contact-block label {
     color: #bbb;
     font-size: 0.9rem;
@@ -482,7 +514,6 @@ form button:hover { background: #333; }
     background: #e6e6e6;
 }
 
-/* Mobiliesiems telefonams: sudedame vieną po kitu */
 @media (max-width: 800px) {
     .contact-block {
         grid-template-columns: 1fr;
@@ -499,14 +530,11 @@ form button:hover { background: #333; }
     .menu { flex-wrap: wrap; justify-content: flex-end; }
     .topbar { gap: 10px; }
 }
-/* Panaikiname didelį tarpą tarp Partnerių ir Kontaktų */
-.section.partners {
-    padding-bottom: 20px; /* Sumažiname apatinį tarpą (buvo 60px) */
+
+.section.partners-modern + .section {
+    padding-top: 0;
 }
 
-.section.partners + .section {
-    padding-top: 0; /* Panaikiname viršutinį tarpą (buvo 60px) */
-}
 /* --- Admin Meniu --- */
 .admin-menu {
     display: flex;
@@ -536,12 +564,12 @@ form button:hover { background: #333; }
     background: #000;
     color: #fff;
 }
-/* --- Vartotojo Meniu (Dropdown) --- */
 
+/* --- Dropdown --- */
 .dropdown {
     position: relative;
     display: inline-block;
-    padding: 10px 0; /* Nedidelis tarpas, kad pelė "nepabėgtų" */
+    padding: 10px 0;
 }
 
 .dropdown-trigger {
@@ -556,7 +584,6 @@ form button:hover { background: #333; }
     background: #f0f0f0;
 }
 
-/* Paslėptas meniu turinys */
 .dropdown-content {
     display: none;
     position: absolute;
@@ -572,13 +599,11 @@ form button:hover { background: #333; }
     overflow: hidden;
 }
 
-/* Rodyti meniu užvedus pelę */
 .dropdown:hover .dropdown-content {
     display: block;
     animation: fadeIn 0.2s ease;
 }
 
-/* Nuorodos meniu viduje */
 .dropdown-content a {
     color: #333;
     padding: 10px 20px;
@@ -594,7 +619,7 @@ form button:hover { background: #333; }
 }
 
 .dropdown-content .logout-link {
-    color: #d32f2f; /* Raudona spalva atsijungimui */
+    color: #d32f2f;
     border-top: 1px solid #f0f0f0;
     margin-top: 4px;
 }
