@@ -3,14 +3,30 @@
 
 // Load environment variables from .env if present
 $envFile = __DIR__ . '/.env';
-if (file_exists($envFile)) {
-    $vars = parse_ini_file($envFile, false, INI_SCANNER_TYPED);
-    if ($vars !== false) {
-        foreach ($vars as $key => $value) {
-            if (!getenv($key)) {
-                putenv("{$key}={$value}");
-                $_ENV[$key] = $value;
-                $_SERVER[$key] = $value;
+if (file_exists($envFile) && is_readable($envFile)) {
+    $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+
+    if ($lines !== false) {
+        foreach ($lines as $line) {
+            $trimmed = trim($line);
+
+            // Skip comments
+            if ($trimmed === '' || strpos($trimmed, '#') === 0 || strpos($trimmed, ';') === 0) {
+                continue;
+            }
+
+            // Support KEY=VALUE pairs (with or without surrounding quotes)
+            $parts = explode('=', $trimmed, 2);
+            if (count($parts) === 2) {
+                [$key, $value] = $parts;
+                $key = trim($key);
+                $value = trim($value, " \t\n\r\0\x0B\"'" );
+
+                if ($key !== '' && !getenv($key)) {
+                    putenv("{$key}={$value}");
+                    $_ENV[$key] = $value;
+                    $_SERVER[$key] = $value;
+                }
             }
         }
     }
@@ -21,8 +37,16 @@ $dbName = getenv('DB_NAME');
 $dbUser = getenv('DB_USER');
 $dbPass = getenv('DB_PASS');
 
-if (!$dbHost || !$dbName || !$dbUser || $dbPass === false) {
-    die('Trūksta DB_HOST, DB_NAME, DB_USER arba DB_PASS reikšmių .env faile.');
+$missing = [];
+foreach (['DB_HOST' => $dbHost, 'DB_NAME' => $dbName, 'DB_USER' => $dbUser, 'DB_PASS' => $dbPass] as $key => $val) {
+    if ($val === false || $val === null || $val === '') {
+        $missing[] = $key;
+    }
+}
+
+if ($missing) {
+    $location = file_exists($envFile) ? basename($envFile) : '.env';
+    die('Trūksta reikšmių (' . implode(', ', $missing) . ") failo {$location} faile arba aplinkoje.");
 }
 
 // Connect to server and ensure database exists
