@@ -100,7 +100,10 @@ function ensure_schema(PDO $pdo): void
         "    message TEXT NOT NULL,\n" .
         "    button_text VARCHAR(120) DEFAULT NULL,\n" .
         "    button_url VARCHAR(255) DEFAULT NULL,\n" .
-        "    image_url VARCHAR(255) DEFAULT NULL\n" .
+        "    image_url VARCHAR(255) DEFAULT NULL,\n" .
+        "    text_align ENUM('left','center','right') NOT NULL DEFAULT 'left',\n" .
+        "    media_type ENUM('image','video','color') NOT NULL DEFAULT 'image',\n" .
+        "    media_value VARCHAR(255) DEFAULT NULL\n" .
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
 
         "CREATE TABLE IF NOT EXISTS news (\n" .
@@ -121,13 +124,28 @@ function ensure_schema(PDO $pdo): void
         "    CONSTRAINT fk_news_images_news FOREIGN KEY (news_id) REFERENCES news(id) ON DELETE CASCADE\n" .
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
 
-        "INSERT INTO hero_content (id, title, message, button_text, button_url, image_url)\n" .
-        "VALUES (1, 'Kolekcionierių bendruomenė', 'Atraskite monetas, banknotus ir kitus radinius vienoje modernioje erdvėje.', 'Peržiūrėti naujienas', 'news.php', '')\n" .
-        "ON DUPLICATE KEY UPDATE title = VALUES(title), message = VALUES(message), button_text = VALUES(button_text), button_url = VALUES(button_url), image_url = VALUES(image_url);",
+        "INSERT INTO hero_content (id, title, message, button_text, button_url, image_url, text_align, media_type, media_value)\n" .
+        "VALUES (1, 'Kolekcionierių bendruomenė', 'Atraskite monetas, banknotus ir kitus radinius vienoje modernioje erdvėje.', 'Peržiūrėti naujienas', 'news.php', '', 'left', 'image', '')\n" .
+        "ON DUPLICATE KEY UPDATE title = VALUES(title), message = VALUES(message), button_text = VALUES(button_text), button_url = VALUES(button_url), image_url = VALUES(image_url), text_align = VALUES(text_align), media_type = VALUES(media_type), media_value = VALUES(media_value);",
     ];
 
     foreach ($statements as $sql) {
         $pdo->exec($sql);
+    }
+
+    // Backfill new columns if the table existed previously
+    $migrations = [
+        "ALTER TABLE hero_content ADD COLUMN text_align ENUM('left','center','right') NOT NULL DEFAULT 'left' AFTER image_url",
+        "ALTER TABLE hero_content ADD COLUMN media_type ENUM('image','video','color') NOT NULL DEFAULT 'image' AFTER text_align",
+        "ALTER TABLE hero_content ADD COLUMN media_value VARCHAR(255) DEFAULT NULL AFTER media_type",
+    ];
+
+    foreach ($migrations as $sql) {
+        try {
+            $pdo->exec($sql);
+        } catch (PDOException $e) {
+            // Column probably exists; ignore to keep boot fast
+        }
     }
 }
 

@@ -2,20 +2,42 @@
 require_once __DIR__ . '/partials.php';
 
 // Fetch hero content
-$stmt = $pdo->prepare('SELECT title, message, button_text, button_url, image_url FROM hero_content WHERE id = 1');
+$stmt = $pdo->prepare('SELECT title, message, button_text, button_url, image_url, text_align, media_type, media_value FROM hero_content WHERE id = 1');
 $stmt->execute();
 $hero = $stmt->fetch() ?: [
     'title' => 'Kolekcionierių bendruomenė',
     'message' => 'Atraskite monetas, banknotus ir kitus radinius vienoje modernioje erdvėje.',
     'button_text' => 'Peržiūrėti naujienas',
     'button_url' => 'news.php',
-    'image_url' => ''
+    'image_url' => '',
+    'text_align' => 'left',
+    'media_type' => 'image',
+    'media_value' => ''
 ];
+
+$align = in_array($hero['text_align'], ['left', 'center', 'right'], true) ? $hero['text_align'] : 'left';
+$mediaType = in_array($hero['media_type'], ['image', 'video', 'color'], true) ? $hero['media_type'] : 'image';
+$mediaValue = trim($hero['media_value'] ?? '') ?: trim($hero['image_url'] ?? '');
+$heroClasses = ['hero', 'align-' . $align];
+$heroStyle = '';
+
+if ($mediaType === 'color' && $mediaValue) {
+    $heroClasses[] = 'hero--color';
+    $heroStyle = '--hero-color:' . e($mediaValue) . ';';
+} elseif ($mediaType === 'image' && $mediaValue) {
+    $heroClasses[] = 'hero--image';
+    $heroStyle = '--hero-image: url(' . e($mediaValue) . ');';
+} elseif ($mediaType === 'video' && $mediaValue) {
+    $heroClasses[] = 'hero--video';
+}
 
 render_head('e-kolekcija.lt');
 render_nav();
 ?>
-<section class="hero" style="<?php echo $hero['image_url'] ? '--hero-image: url(' . e($hero['image_url']) . ');' : ''; ?>">
+<section class="<?php echo e(implode(' ', $heroClasses)); ?>" style="<?php echo e($heroStyle); ?>">
+    <?php if ($mediaType === 'video' && $mediaValue): ?>
+        <video class="hero-video" src="<?php echo e($mediaValue); ?>" autoplay muted loop playsinline></video>
+    <?php endif; ?>
     <div class="content">
         <h1><?php echo e($hero['title']); ?></h1>
         <p><?php echo e($hero['message']); ?></p>

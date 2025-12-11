@@ -34,7 +34,7 @@ a:hover { text-decoration: underline; }
     font-weight: 900;
     letter-spacing: 0.5px;
     text-transform: lowercase;
-    font-size: clamp(1.5rem, 3vw, 2.2rem);
+    font-size: clamp(2.2rem, 4vw, 3.2rem);
     padding: 6px 10px;
     border-radius: 14px;
     transition: transform 0.15s ease, background-color 0.2s ease;
@@ -88,7 +88,11 @@ a:hover { text-decoration: underline; }
 .hero .content {
     position: relative;
     padding: 60px 8%;
-    max-width: 600px;
+    max-width: 720px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    z-index: 1;
 }
 
 .hero h1 { font-size: clamp(2.5rem, 4vw, 3.6rem); margin: 0 0 12px; }
@@ -103,6 +107,27 @@ a:hover { text-decoration: underline; }
     transition: all 0.2s ease;
 }
 .hero .cta:hover { background: #fff; color: #000; }
+
+.hero.align-center { justify-content: center; text-align: center; }
+.hero.align-right { justify-content: flex-end; text-align: right; }
+.hero.align-center .content { align-items: center; text-align: center; }
+.hero.align-right .content { align-items: flex-end; text-align: right; }
+
+.hero--color { background: var(--hero-color, #000); }
+.hero--color::before { display: none; }
+
+.hero--video { background: #000; }
+.hero--video::before { background-image: none; animation: none; }
+
+.hero-video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    filter: brightness(0.55);
+    z-index: 0;
+}
 
 .section {
     padding: 60px 8%;
