@@ -18,6 +18,7 @@ body {
 a { color: var(--text); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
+/* --- Topbar & Menu --- */
 .topbar {
     display: flex;
     align-items: center;
@@ -55,6 +56,7 @@ a:hover { text-decoration: underline; }
 .menu .pill:hover { background: #000; color: #fff; }
 .welcome { color: var(--muted); font-size: 0.9rem; }
 
+/* --- Hero --- */
 .hero {
     position: relative;
     min-height: 70vh;
@@ -138,16 +140,16 @@ a:hover { text-decoration: underline; }
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
 }
 
-/* --- PARTNERIŲ SEKCIJA (VISADA SPALVOTA) --- */
+/* --- PARTNERIŲ SEKCIJA (ATNAUJINTA: #f1f1f1 FONAS) --- */
 
 .partners-modern {
-    padding: 80px 8%;
-    background: #fff;
+    padding: 60px 8%;
+    background: var(--bg); /* PAKEISTA: Dabar naudoja #f1f1f1 */
     margin-bottom: 0;
 }
 
 .partners-header {
-    margin-bottom: 50px;
+    margin-bottom: 40px;
     text-align: center;
 }
 
@@ -166,7 +168,7 @@ a:hover { text-decoration: underline; }
 .partners-container {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 30px;
+    gap: 25px;
     max-width: 1000px;
     margin: 0 auto;
 }
@@ -177,71 +179,80 @@ a:hover { text-decoration: underline; }
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    padding: 40px;
+    
+    /* Kompaktiškas padding: 5px vertikaliai, 30px horizontaliai */
+    padding: 5px 30px;
+    
     border-radius: 24px;
     text-decoration: none;
     transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
     overflow: hidden;
     
-    /* SVARBU: Šios savybės dabar taikomos visada */
     background-color: var(--bg-hover);
     border: 2px solid var(--accent-color);
-    box-shadow: 0 15px 40px -10px var(--accent-color); /* Nuolatinis "švytėjimas" */
+    box-shadow: 0 10px 30px -10px var(--accent-color);
+    
+    min-height: 180px; 
 }
 
-/* -- PIRKIS (Spalvos) -- */
+/* -- Spalvos -- */
 .partner-box.pirkis {
     --accent-color: #85bf27;
     --bg-hover: #f4fbf0; 
 }
 
-/* -- ALLEGRO (Spalvos) -- */
 .partner-box.allegro {
     --accent-color: #ff5a00;
     --bg-hover: #fff8f5; 
 }
 
-/* Hover efektas - tik šiek tiek pakyla, spalvos nesikeičia */
+/* Hover efektas */
 .partner-box:hover {
-    transform: translateY(-5px); /* Nedidelis pakilimas paspaudimui */
-    box-shadow: 0 25px 50px -10px var(--accent-color); /* Šešėlis šiek tiek sustiprėja */
+    transform: translateY(-5px);
+    box-shadow: 0 20px 45px -10px var(--accent-color);
     text-decoration: none;
 }
 
-/* Turinys - Visada spalvotas */
+/* Turinys */
+.box-content {
+    margin-top: 15px; 
+}
+
 .partner-label {
     font-size: 0.75rem;
     text-transform: uppercase;
     letter-spacing: 2px;
     font-weight: 700;
-    margin-bottom: 15px;
+    margin-bottom: 8px;
     display: block;
-    color: var(--accent-color); /* Visada spalvota */
+    color: var(--accent-color);
 }
 
 .partner-box h3 {
-    font-size: 2.2rem;
-    margin: 0 0 15px 0;
+    font-size: 2rem;
+    margin: 0 0 8px 0;
     color: #111;
     font-weight: 800;
+    line-height: 1.2;
 }
 
 .partner-box p {
     color: #666;
     margin: 0;
-    font-size: 1.1rem;
-    line-height: 1.5;
+    font-size: 1rem;
+    line-height: 1.4;
 }
 
-/* Rodyklė - Visada spalvota */
+/* Rodyklė apačioje */
 .box-action {
-    margin-top: 40px;
+    margin-top: 15px;
+    margin-bottom: 15px;
     display: flex;
     align-items: center;
     gap: 10px;
     font-weight: 700;
-    font-size: 1.1rem;
-    color: var(--accent-color); /* Visada spalvota */
+    font-size: 1rem;
+    color: var(--accent-color);
 }
 
 .box-action .arrow {
@@ -249,8 +260,9 @@ a:hover { text-decoration: underline; }
 }
 
 .partner-box:hover .arrow {
-    transform: translateX(6px); /* Rodyklė pajuda užvedus */
+    transform: translateX(6px);
 }
+
 
 /* --- KITA --- */
 
@@ -347,6 +359,7 @@ form button:hover { background: #333; }
 .alert.success { background: #e8f6ef; color: #156a45; }
 .alert.error { background: #ffe8e6; color: #8a1f11; }
 
+/* Naujienų tinklelis */
 .news-list {
     display: grid;
     gap: 20px;
