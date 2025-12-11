@@ -94,7 +94,7 @@ function ensure_schema(PDO $pdo): void
         
         // Initial Seed
         "INSERT INTO hero_content (id, title, message, button_text, button_url, image_url, text_align, media_type, media_value)
-        VALUES (1, 'Kolekcionierių bendruomenė', 'Atraskite monetas, banknotus ir kitus radinius vienoje modernioje erdvėje.', 'Peržiūrėti naujienas', 'news.php', '', 'left', 'image', '')
+        VALUES (1, 'MŪSŲ NAUJIENOS', 'Atraskite monetas, banknotus ir kitus radinius vienoje modernioje erdvėje.', 'Peržiūrėti naujienas', 'news.php', '', 'left', 'image', '')
         ON DUPLICATE KEY UPDATE title = VALUES(title);"
     ];
 
