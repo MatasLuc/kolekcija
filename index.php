@@ -49,16 +49,16 @@ render_nav();
 
 <section class="section partners-modern">
     <div class="partners-header">
-        <h2>Partneriai</h2>
-        <p>Apsilankykite mūsų partnerių parduotuvėse</p>
+        <h2>Mus galite rasti ir čia</h2>
+        <p>Monetos, banknotai, albumai, kapsulės ir kitos prekės bei jų aukcionai</p>
     </div>
 
     <div class="partners-container">
         <a href="https://pirkis.lt/shops/30147-e-kolekcija.html" target="_blank" rel="nofollow" class="partner-box pirkis">
             <div class="box-content">
-                <span class="partner-label">Katalogas</span>
+                <span class="partner-label">Lietuva</span>
                 <h3>Pirkis.lt</h3>
-                <p>Patikimas asortimentas jūsų kolekcijai</p>
+                <p>Mūsų prekės pirkis.lt parduotuvėje</p>
             </div>
             <div class="box-action">
                 <span>Atidaryti</span>
@@ -68,9 +68,9 @@ render_nav();
 
         <a href="https://allegro.pl/uzytkownik/e-Kolekcija" target="_blank" rel="nofollow" class="partner-box allegro">
             <div class="box-content">
-                <span class="partner-label">Aukcionai</span>
+                <span class="partner-label">Lenkija</span>
                 <h3>Allegro.pl</h3>
-                <p>Reti radiniai ir išskirtiniai pasiūlymai</p>
+                <p>Mūsų prekės allegro.pl parduotuvėje</p>
             </div>
             <div class="box-action">
                 <span>Atidaryti</span>
