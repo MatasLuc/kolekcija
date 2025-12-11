@@ -34,19 +34,19 @@ render_nav();
         <a class="partner-card" href="https://pirkis.lt/shops/30147-e-kolekcija.html" target="_blank" rel="nofollow">
             <div class="partner-media" style="--accent:#85bf27;">
                 <img src="https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=606,h=304,fit=crop,trim=71.40718562874251;441.9848484848485;0;0/YZ9VqrOVpxS49M9g/pirkis2-m6Lwny9oz8tyXw83.png" alt="pirkis.lt" loading="lazy">
-            </div>
-            <div class="partner-meta">
-                <span class="label" style="color:#85bf27;">pirkis.lt</span>
-                <strong>Patikimas mūsų katalogas</strong>
+                <div class="partner-meta">
+                    <span class="label" style="color:#85bf27;">pirkis.lt</span>
+                    <strong>Patikimas mūsų katalogas</strong>
+                </div>
             </div>
         </a>
         <a class="partner-card" href="https://allegro.pl/uzytkownik/e-Kolekcija" target="_blank" rel="nofollow">
             <div class="partner-media" style="--accent:#ff5a00;">
                 <img src="https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=606,h=304,fit=crop,trim=0;0;405.87740805604204;0/YZ9VqrOVpxS49M9g/allegro-YX4yvkxeqyi1r0Vz.png" alt="allegro.pl" loading="lazy">
-            </div>
-            <div class="partner-meta">
-                <span class="label" style="color:#ff5a00;">allegro.pl</span>
-                <strong>Reti radiniai kolekcionieriams</strong>
+                <div class="partner-meta">
+                    <span class="label" style="color:#ff5a00;">allegro.pl</span>
+                    <strong>Reti radiniai kolekcionieriams</strong>
+                </div>
             </div>
         </a>
     </div>

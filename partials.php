@@ -11,7 +11,7 @@ function render_nav(): void
     $user = current_user();
     ?>
     <header class="topbar">
-        <div class="logo">e-kolekcija.lt</div>
+        <a href="index.php" class="logo" aria-label="e-kolekcija.lt">e-kolekcija.lt</a>
         <nav class="menu">
             <a href="index.php">Pagrindinis</a>
             <a href="news.php">Naujienos</a>

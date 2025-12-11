@@ -31,9 +31,19 @@ a:hover { text-decoration: underline; }
 }
 
 .logo {
-    font-weight: 800;
+    font-weight: 900;
     letter-spacing: 0.5px;
     text-transform: lowercase;
+    font-size: clamp(1.5rem, 3vw, 2.2rem);
+    padding: 6px 10px;
+    border-radius: 14px;
+    transition: transform 0.15s ease, background-color 0.2s ease;
+}
+
+.logo:hover {
+    text-decoration: none;
+    background: #f5f5f5;
+    transform: translateY(-1px);
 }
 
 .menu { display: flex; gap: 14px; align-items: center; }
@@ -121,29 +131,46 @@ a:hover { text-decoration: underline; }
 }
 
 .partner-card {
-    display: grid;
-    gap: 16px;
-    padding: 0;
-    background: transparent;
-    border: none;
-    box-shadow: none;
     position: relative;
+    display: block;
+    padding: 12px 12px 16px;
+    border-radius: 22px;
+    border: 1px solid #e1e1e1;
+    background: linear-gradient(135deg, #fff, #f8f8f8);
+    box-shadow: 0 15px 35px rgba(0,0,0,0.08);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
+
+.partner-card:hover { transform: translateY(-4px); box-shadow: 0 18px 45px rgba(0,0,0,0.12); }
 
 .partner-card .partner-media {
     position: relative;
-    border-radius: 22px;
+    border-radius: 24px;
     overflow: hidden;
     isolation: isolate;
     border: 1px solid #e1e1e1;
-    box-shadow: 0 15px 45px rgba(0,0,0,0.08);
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.03), 0 15px 45px rgba(0,0,0,0.08);
     aspect-ratio: 3 / 1.5;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: radial-gradient(circle at 15% 20%, color-mix(in srgb, var(--accent) 35%, #000 5%), transparent 40%),
-                radial-gradient(circle at 85% 10%, color-mix(in srgb, var(--accent) 20%, #000 5%), transparent 35%),
-                #fff;
+    background: radial-gradient(circle at 15% 20%, color-mix(in srgb, var(--accent) 40%, #000 6%), transparent 42%),
+                radial-gradient(circle at 85% 10%, color-mix(in srgb, var(--accent) 28%, #000 4%), transparent 35%),
+                linear-gradient(135deg, #fff, #f7f7f7);
+}
+
+.partner-card .partner-media::before,
+.partner-card .partner-media::after {
+    content: "";
+    position: absolute;
+    inset: 12% 10%;
+    border-radius: 24px;
+    mix-blend-mode: multiply;
+    filter: blur(0.5px);
+    transform: rotate(-3deg);
+    opacity: 0.35;
+    background: conic-gradient(from 120deg, color-mix(in srgb, var(--accent) 30%, #ffffff 10%), transparent 60%);
+    z-index: 1;
 }
 
 .partner-card img {
@@ -152,14 +179,27 @@ a:hover { text-decoration: underline; }
     object-fit: cover;
     filter: saturate(1.05);
     mix-blend-mode: multiply;
+    transform: scale(1.04);
+    transition: transform 0.2s ease;
+    position: relative;
+    z-index: 2;
 }
 
+.partner-card:hover img { transform: scale(1.07); }
+
 .partner-meta {
-    display: flex;
+    position: absolute;
+    left: 18px;
+    bottom: 16px;
+    z-index: 3;
+    display: inline-flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 0 6px;
-    color: var(--text);
+    gap: 4px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.84);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.12);
+    backdrop-filter: blur(5px);
 }
 
 .partner-meta .label {
@@ -244,6 +284,8 @@ form button {
 }
 form button:hover { background: #333; }
 
+.two-up { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+
 .table {
     width: 100%;
     border-collapse: collapse;
@@ -260,8 +302,33 @@ form button:hover { background: #333; }
 .alert.error { background: #ffe8e6; color: #8a1f11; }
 
 .news-list { display: grid; gap: 16px; }
-.news-item { padding: 18px; background: #fff; border-radius: 12px; border: 1px solid #ececec; }
+.news-item { padding: 18px; background: #fff; border-radius: 12px; border: 1px solid #ececec; display: grid; gap: 12px; }
 .news-item time { color: var(--muted); font-size: 0.9rem; }
+.news-cover { margin: 0; border-radius: 14px; overflow: hidden; position: relative; background: #f7f7f7; border: 1px solid #eee; }
+.news-cover img { width: 100%; display: block; object-fit: cover; max-height: 360px; }
+.news-cover figcaption { padding: 10px 12px; font-size: 0.95rem; color: #333; background: linear-gradient(180deg, rgba(255,255,255,0.88), #fff); }
+.news-thumbs { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.news-thumbs .thumb { position: relative; overflow: hidden; border-radius: 10px; border: 1px solid #eee; background: #fafafa; }
+.news-thumbs img { width: 100%; height: 120px; object-fit: cover; display: block; }
+.news-thumbs span { position: absolute; left: 8px; bottom: 8px; background: rgba(0,0,0,0.7); color: #fff; padding: 4px 8px; border-radius: 10px; font-size: 0.85rem; }
+
+.news-image-admin { margin-top: 16px; display: grid; gap: 12px; }
+.news-image-admin__header { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.news-image-admin__header h4 { margin: 0; }
+.inline-form { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.inline-form input[type="file"] { flex: 1; min-width: 180px; }
+.news-image-admin__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.news-image-card { position: relative; border: 1px solid #e5e5e5; border-radius: 12px; overflow: hidden; background: #fdfdfd; box-shadow: 0 10px 25px rgba(0,0,0,0.06); display: grid; gap: 8px; padding-bottom: 10px; }
+.news-image-card.primary { border-color: #111; }
+.news-image-card img { width: 100%; height: 150px; object-fit: cover; }
+.news-image-card .chip { position: absolute; top: 8px; left: 8px; background: #111; color: #fff; padding: 4px 10px; border-radius: 999px; font-size: 0.85rem; }
+.news-image-card__actions { display: flex; gap: 8px; align-items: center; padding: 0 10px; }
+.caption-form { display: flex; gap: 8px; padding: 0 10px 8px; align-items: center; }
+.caption-form input { flex: 1; }
+.ghost { border: 1px solid #e0e0e0; background: #fafafa; padding: 6px 10px; border-radius: 10px; cursor: pointer; }
+.ghost:hover { background: #f0f0f0; }
+.ghost.danger { color: #c00; border-color: #f1c1c1; }
+.muted { color: #777; }
 
 @media (max-width: 720px) {
     .menu { flex-wrap: wrap; justify-content: flex-end; }

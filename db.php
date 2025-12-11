@@ -111,6 +111,16 @@ function ensure_schema(PDO $pdo): void
         "    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP\n" .
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
 
+        "CREATE TABLE IF NOT EXISTS news_images (\n" .
+        "    id INT AUTO_INCREMENT PRIMARY KEY,\n" .
+        "    news_id INT NOT NULL,\n" .
+        "    path VARCHAR(255) NOT NULL,\n" .
+        "    caption VARCHAR(255) DEFAULT NULL,\n" .
+        "    is_primary TINYINT(1) NOT NULL DEFAULT 0,\n" .
+        "    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n" .
+        "    CONSTRAINT fk_news_images_news FOREIGN KEY (news_id) REFERENCES news(id) ON DELETE CASCADE\n" .
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
+
         "INSERT INTO hero_content (id, title, message, button_text, button_url, image_url)\n" .
         "VALUES (1, 'Kolekcionierių bendruomenė', 'Atraskite monetas, banknotus ir kitus radinius vienoje modernioje erdvėje.', 'Peržiūrėti naujienas', 'news.php', '')\n" .
         "ON DUPLICATE KEY UPDATE title = VALUES(title), message = VALUES(message), button_text = VALUES(button_text), button_url = VALUES(button_url), image_url = VALUES(image_url);",

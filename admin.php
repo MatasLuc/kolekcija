@@ -3,11 +3,66 @@ require_once __DIR__ . '/partials.php';
 require_admin();
 
 $alert = ['type' => '', 'message' => ''];
+$uploadDir = __DIR__ . '/uploads';
+
+if (!is_dir($uploadDir)) {
+    mkdir($uploadDir, 0775, true);
+}
 
 function set_alert(string $type, string $message): void
 {
     global $alert;
     $alert = ['type' => $type, 'message' => $message];
+}
+
+function upload_news_image(int $newsId, array $file, string $caption, string $uploadDir, PDO $pdo): array
+{
+    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+        return [false, ''];
+    }
+
+    if (!is_uploaded_file($file['tmp_name'] ?? '')) {
+        return [false, 'Nepavyko gauti failo.'];
+    }
+
+    if (($file['size'] ?? 0) > 5 * 1024 * 1024) {
+        return [false, 'Paveikslėlis per didelis (maks. 5MB).'];
+    }
+
+    $finfo = new finfo(FILEINFO_MIME_TYPE);
+    $mime = $finfo->file($file['tmp_name']);
+    $allowed = [
+        'image/jpeg' => 'jpg',
+        'image/png' => 'png',
+        'image/webp' => 'webp',
+        'image/gif' => 'gif',
+    ];
+
+    if (!isset($allowed[$mime])) {
+        return [false, 'Nepalaikomas paveikslėlio formatas.'];
+    }
+
+    $filename = 'news_' . $newsId . '_' . uniqid() . '.' . $allowed[$mime];
+    $targetPath = rtrim($uploadDir, "/\\") . '/' . $filename;
+    $publicPath = 'uploads/' . $filename;
+
+    if (!move_uploaded_file($file['tmp_name'], $targetPath)) {
+        return [false, 'Nepavyko įkelti paveikslėlio.'];
+    }
+
+    $primaryStmt = $pdo->prepare('SELECT COUNT(*) FROM news_images WHERE news_id = :id AND is_primary = 1');
+    $primaryStmt->execute([':id' => $newsId]);
+    $shouldBePrimary = (int)$primaryStmt->fetchColumn() === 0 ? 1 : 0;
+
+    $insert = $pdo->prepare('INSERT INTO news_images (news_id, path, caption, is_primary) VALUES (:news_id, :path, :caption, :is_primary)');
+    $insert->execute([
+        ':news_id' => $newsId,
+        ':path' => $publicPath,
+        ':caption' => $caption !== '' ? $caption : null,
+        ':is_primary' => $shouldBePrimary,
+    ]);
+
+    return [true, $shouldBePrimary ? 'Pagrindinis paveikslėlis pridėtas.' : 'Paveikslėlis pridėtas.'];
 }
 
 // Handle hero content
@@ -35,15 +90,112 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'news'
     $title = trim($_POST['news_title'] ?? '');
     $body = trim($_POST['news_body'] ?? '');
     $id = $_POST['news_id'] ?? '';
+    $caption = trim($_POST['news_image_caption'] ?? '');
 
     if ($id) {
         $stmt = $pdo->prepare('UPDATE news SET title = :title, body = :body, updated_at = NOW() WHERE id = :id');
         $stmt->execute([':title' => $title, ':body' => $body, ':id' => $id]);
-        set_alert('success', 'Naujiena atnaujinta.');
+        if (!empty($_FILES['news_image']['name'])) {
+            [$ok, $msg] = upload_news_image((int)$id, $_FILES['news_image'], $caption, $uploadDir, $pdo);
+            if ($ok && $msg) {
+                set_alert('success', 'Naujiena atnaujinta ir ' . strtolower($msg));
+            } elseif ($msg) {
+                set_alert('error', $msg);
+            } else {
+                set_alert('success', 'Naujiena atnaujinta.');
+            }
+        } else {
+            set_alert('success', 'Naujiena atnaujinta.');
+        }
     } else {
         $stmt = $pdo->prepare('INSERT INTO news (title, body, created_at, updated_at) VALUES (:title, :body, NOW(), NOW())');
         $stmt->execute([':title' => $title, ':body' => $body]);
-        set_alert('success', 'Naujiena pridėta.');
+        $newsId = (int)$pdo->lastInsertId();
+
+        if (!empty($_FILES['news_image']['name'])) {
+            [$ok, $msg] = upload_news_image($newsId, $_FILES['news_image'], $caption, $uploadDir, $pdo);
+            if ($ok && $msg) {
+                set_alert('success', 'Naujiena pridėta ir ' . strtolower($msg));
+            } elseif ($msg) {
+                set_alert('error', $msg);
+            } else {
+                set_alert('success', 'Naujiena pridėta.');
+            }
+        } else {
+            set_alert('success', 'Naujiena pridėta.');
+        }
+    }
+}
+
+// Handle adding image to an existing news entry
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'news_image_add') {
+    $newsId = (int)($_POST['news_id'] ?? 0);
+    $caption = trim($_POST['caption'] ?? '');
+
+    if ($newsId && isset($_FILES['news_image'])) {
+        [$ok, $msg] = upload_news_image($newsId, $_FILES['news_image'], $caption, $uploadDir, $pdo);
+        if ($ok) {
+            set_alert('success', $msg ?: 'Paveikslėlis pridėtas.');
+        } elseif ($msg) {
+            set_alert('error', $msg);
+        }
+    }
+}
+
+// Handle marking primary image
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'news_image_primary') {
+    $imageId = (int)($_POST['image_id'] ?? 0);
+    $newsId = (int)($_POST['news_id'] ?? 0);
+
+    $belongs = $pdo->prepare('SELECT id FROM news_images WHERE id = :id AND news_id = :news_id');
+    $belongs->execute([':id' => $imageId, ':news_id' => $newsId]);
+    if ($belongs->fetch()) {
+        $pdo->beginTransaction();
+        $pdo->prepare('UPDATE news_images SET is_primary = 0 WHERE news_id = :news_id')->execute([':news_id' => $newsId]);
+        $pdo->prepare('UPDATE news_images SET is_primary = 1 WHERE id = :id')->execute([':id' => $imageId]);
+        $pdo->commit();
+        set_alert('success', 'Pagrindinis paveikslėlis nustatytas.');
+    }
+}
+
+// Handle caption edits
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'news_image_caption') {
+    $imageId = (int)($_POST['image_id'] ?? 0);
+    $caption = trim($_POST['caption'] ?? '');
+
+    if ($imageId) {
+        $stmt = $pdo->prepare('UPDATE news_images SET caption = :caption WHERE id = :id');
+        $stmt->execute([':caption' => $caption !== '' ? $caption : null, ':id' => $imageId]);
+        set_alert('success', 'Paveikslėlio aprašas atnaujintas.');
+    }
+}
+
+// Handle image removal
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'news_image_delete') {
+    $imageId = (int)($_POST['image_id'] ?? 0);
+
+    if ($imageId) {
+        $stmt = $pdo->prepare('SELECT path, news_id, is_primary FROM news_images WHERE id = :id');
+        $stmt->execute([':id' => $imageId]);
+        if ($row = $stmt->fetch()) {
+            $fullPath = __DIR__ . '/' . ltrim($row['path'], '/');
+            if (is_file($fullPath)) {
+                @unlink($fullPath);
+            }
+
+            $pdo->prepare('DELETE FROM news_images WHERE id = :id')->execute([':id' => $imageId]);
+
+            if ((int)$row['is_primary'] === 1) {
+                $next = $pdo->prepare('SELECT id FROM news_images WHERE news_id = :news_id ORDER BY created_at DESC LIMIT 1');
+                $next->execute([':news_id' => $row['news_id']]);
+                if ($nextId = $next->fetchColumn()) {
+                    $pdo->prepare('UPDATE news_images SET is_primary = 0 WHERE news_id = :news_id')->execute([':news_id' => $row['news_id']]);
+                    $pdo->prepare('UPDATE news_images SET is_primary = 1 WHERE id = :id')->execute([':id' => $nextId]);
+                }
+            }
+
+            set_alert('success', 'Paveikslėlis pašalintas.');
+        }
     }
 }
 
@@ -64,6 +216,11 @@ $heroStmt->execute();
 $hero = $heroStmt->fetch() ?: ['title' => '', 'message' => '', 'button_text' => '', 'button_url' => '', 'image_url' => ''];
 
 $news = $pdo->query('SELECT id, title, body, updated_at FROM news ORDER BY updated_at DESC')->fetchAll();
+$imageStmt = $pdo->query('SELECT id, news_id, path, caption, is_primary, created_at FROM news_images ORDER BY is_primary DESC, created_at DESC');
+$imagesByNews = [];
+foreach ($imageStmt->fetchAll() as $img) {
+    $imagesByNews[$img['news_id']][] = $img;
+}
 $users = $pdo->query('SELECT id, name, email, role FROM users ORDER BY name ASC')->fetchAll();
 
 render_head('Administratoriaus pultas');
@@ -98,7 +255,7 @@ render_nav();
         </form>
 
         <h2 style="margin-top:42px;">Naujienos</h2>
-        <form method="post">
+        <form method="post" enctype="multipart/form-data">
             <input type="hidden" name="action" value="news">
             <input type="hidden" name="news_id" value="">
             <label for="news_title">Pavadinimas</label>
@@ -106,6 +263,17 @@ render_nav();
 
             <label for="news_body">Turinys</label>
             <textarea id="news_body" name="news_body" rows="4" required></textarea>
+
+            <div class="two-up">
+                <div>
+                    <label for="news_image">Paveikslėlis</label>
+                    <input id="news_image" name="news_image" type="file" accept="image/*">
+                </div>
+                <div>
+                    <label for="news_image_caption">Paveikslėlio aprašas</label>
+                    <input id="news_image_caption" name="news_image_caption" placeholder="(pasirinktinai)">
+                </div>
+            </div>
 
             <button type="submit">Pridėti naujieną</button>
         </form>
@@ -123,15 +291,71 @@ render_nav();
                         <td>
                             <details>
                                 <summary>Redaguoti</summary>
-                                <form method="post" style="margin-top:10px;">
+                                <form method="post" enctype="multipart/form-data" style="margin-top:10px;">
                                     <input type="hidden" name="action" value="news">
                                     <input type="hidden" name="news_id" value="<?php echo e($item['id']); ?>">
                                     <label>Pavadinimas</label>
                                     <input name="news_title" value="<?php echo e($item['title']); ?>" required>
                                     <label>Turinys</label>
                                     <textarea name="news_body" rows="3" required><?php echo e($item['body']); ?></textarea>
+                                    <div class="two-up">
+                                        <div>
+                                            <label>Paveikslėlis</label>
+                                            <input name="news_image" type="file" accept="image/*">
+                                        </div>
+                                        <div>
+                                            <label>Paveikslėlio aprašas</label>
+                                            <input name="news_image_caption" placeholder="(pasirinktinai)">
+                                        </div>
+                                    </div>
                                     <button type="submit">Išsaugoti</button>
                                 </form>
+                                <?php $images = $imagesByNews[$item['id']] ?? []; ?>
+                                <div class="news-image-admin">
+                                    <div class="news-image-admin__header">
+                                        <h4>Paveikslėliai</h4>
+                                        <form method="post" enctype="multipart/form-data" class="inline-form">
+                                            <input type="hidden" name="action" value="news_image_add">
+                                            <input type="hidden" name="news_id" value="<?php echo e($item['id']); ?>">
+                                            <input name="caption" placeholder="Aprašas" style="flex:1;">
+                                            <input type="file" name="news_image" accept="image/*" required>
+                                            <button type="submit">Pridėti</button>
+                                        </form>
+                                    </div>
+                                    <?php if ($images): ?>
+                                        <div class="news-image-admin__grid">
+                                            <?php foreach ($images as $img): ?>
+                                                <div class="news-image-card <?php echo $img['is_primary'] ? 'primary' : ''; ?>">
+                                                    <img src="<?php echo e($img['path']); ?>" alt="" loading="lazy">
+                                                    <?php if ($img['is_primary']): ?><span class="chip">Pagrindinė</span><?php endif; ?>
+                                                    <div class="news-image-card__actions">
+                                                        <?php if (!$img['is_primary']): ?>
+                                                        <form method="post" class="inline-form">
+                                                            <input type="hidden" name="action" value="news_image_primary">
+                                                            <input type="hidden" name="news_id" value="<?php echo e($item['id']); ?>">
+                                                            <input type="hidden" name="image_id" value="<?php echo e($img['id']); ?>">
+                                                            <button type="submit" class="ghost">Padaryti pagrindine</button>
+                                                        </form>
+                                                        <?php endif; ?>
+                                                        <form method="post" class="inline-form" onsubmit="return confirm('Pašalinti paveikslėlį?');">
+                                                            <input type="hidden" name="action" value="news_image_delete">
+                                                            <input type="hidden" name="image_id" value="<?php echo e($img['id']); ?>">
+                                                            <button type="submit" class="ghost danger">Šalinti</button>
+                                                        </form>
+                                                    </div>
+                                                    <form method="post" class="caption-form">
+                                                        <input type="hidden" name="action" value="news_image_caption">
+                                                        <input type="hidden" name="image_id" value="<?php echo e($img['id']); ?>">
+                                                        <input name="caption" value="<?php echo e($img['caption']); ?>" placeholder="Aprašas">
+                                                        <button type="submit" class="ghost">Išsaugoti</button>
+                                                    </form>
+                                                </div>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php else: ?>
+                                        <p class="muted">Nėra įkeltų paveikslėlių.</p>
+                                    <?php endif; ?>
+                                </div>
                             </details>
                         </td>
                     </tr>
