@@ -30,8 +30,9 @@ $dbPass = getenv('DB_PASS');
 $dbPort = getenv('DB_PORT') ?: '3306';
 
 if (!$dbName || !$dbUser) {
-    // Jei nerodo klaidos naršyklėje, patikrinkite error_log
-    die('Klaida: Nenurodyti DB_NAME arba DB_USER faile .env');
+    // Saugumo sumetimais geriau nerodyti konkrečios konfigūracijos klaidos viešai
+    error_log('Klaida: Nenurodyti DB_NAME arba DB_USER faile .env');
+    die('Įvyko sistemos konfigūracijos klaida. Patikrinkite serverio nustatymus.');
 }
 
 // 2. Connect directly to the database
@@ -42,8 +43,10 @@ try {
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
     ]);
 } catch (PDOException $e) {
-    // Rodyti tikrą klaidą, kad suprastumėte problemą
-    die('Nepavyko prisijungti prie duomenų bazės: ' . $e->getMessage());
+    // SVARBU: Gamybinėje aplinkoje (production) klaidą rašome į log failą,
+    // o vartotojui rodome bendrinį pranešimą, kad neatskleistume DB struktūros.
+    error_log('DB Connection Error: ' . $e->getMessage()); 
+    die('Įvyko sistemos klaida jungiantis prie duomenų bazės. Pabandykite vėliau.');
 }
 
 // 3. Ensure schema exists (su klaidų gaudymu)
@@ -99,9 +102,8 @@ function ensure_schema(PDO $pdo): void
         try {
             $pdo->exec($sql);
         } catch (PDOException $e) {
-            // Ignoruojame klaidas, jei lentelės jau yra, bet jei rimta klaida - matysime loguose
-            // Galite atkomentuoti žemiau esančią eilutę debugginimui:
-            // die("SQL Klaida: " . $e->getMessage());
+            // Ignoruojame klaidas, jei lentelės jau yra
+            error_log("SQL Schema Warning: " . $e->getMessage());
         }
     }
 
@@ -125,5 +127,6 @@ function ensure_schema(PDO $pdo): void
 try {
     ensure_schema($pdo);
 } catch (Exception $e) {
-    die('Schemos klaida: ' . $e->getMessage());
+    error_log('Schema Error: ' . $e->getMessage());
+    die('Įvyko sistemos klaida nustatant duomenų bazę.');
 }
