@@ -79,6 +79,7 @@ render_nav();
         </a>
     </div>
 </section>
+
 <section class="section">
     <div class="contact-block">
         <div class="contact-info">
