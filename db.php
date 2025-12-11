@@ -61,6 +61,7 @@ try {
         ]
     );
 
+    // Re-create the database automatically if it was dropped between requests.
     $serverPdo->exec("CREATE DATABASE IF NOT EXISTS `{$dbName}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
 } catch (PDOException $e) {
     die('Nepavyko sukurti duomenų bazės: ' . htmlspecialchars($e->getMessage()));
