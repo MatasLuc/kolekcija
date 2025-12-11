@@ -49,16 +49,16 @@ render_nav();
 
 <section class="section partners-modern">
     <div class="partners-header">
-        <h2>Mus galite rasti ir čia</h2>
-        <p>Monetos, banknotai, albumai, kapsulės ir kitos prekės bei jų aukcionai</p>
+        <h2>Partneriai</h2>
+        <p>Apsilankykite mūsų partnerių parduotuvėse</p>
     </div>
 
     <div class="partners-container">
         <a href="https://pirkis.lt/shops/30147-e-kolekcija.html" target="_blank" rel="nofollow" class="partner-box pirkis">
             <div class="box-content">
-                <span class="partner-label">Lietuva</span>
+                <span class="partner-label">Katalogas</span>
                 <h3>Pirkis.lt</h3>
-                <p>Mūsų prekės pirkis.lt parduotuvėje</p>
+                <p>Patikimas asortimentas jūsų kolekcijai</p>
             </div>
             <div class="box-action">
                 <span>Atidaryti</span>
@@ -68,9 +68,9 @@ render_nav();
 
         <a href="https://allegro.pl/uzytkownik/e-Kolekcija" target="_blank" rel="nofollow" class="partner-box allegro">
             <div class="box-content">
-                <span class="partner-label">Lenkija</span>
+                <span class="partner-label">Aukcionai</span>
                 <h3>Allegro.pl</h3>
-                <p>Mūsų prekės allegro.pl parduotuvėje</p>
+                <p>Reti radiniai ir išskirtiniai pasiūlymai</p>
             </div>
             <div class="box-action">
                 <span>Atidaryti</span>
@@ -88,6 +88,7 @@ render_nav();
             <ul>
                 <li>Telefono numeris: <strong>+37060093880</strong></li>
                 <li>El. paštas: <strong>e.kolekcija@gmail.com</strong></li>
+                <li>Facebook: <strong><a href="https://www.facebook.com" target="_blank">E-Kolekcija</a></strong></li>
             </ul>
         </div>
         
