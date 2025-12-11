@@ -37,8 +37,8 @@ function render_nav(): void
                     </div>
                 </div>
             <?php else: ?>
-                <a class="pill" href="login.php">Prisijungti</a>
-                <a class="pill" href="register.php">Registruotis</a>
+                <a href="login.php">Prisijungti</a>
+                <a href="register.php">Registruotis</a>
             <?php endif; ?>
         </nav>
     </header>
