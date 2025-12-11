@@ -16,10 +16,14 @@ if (file_exists($envFile)) {
     }
 }
 
-$dbHost = getenv('DB_HOST') ?: 'localhost';
-$dbName = getenv('DB_NAME') ?: 'kolekcija';
-$dbUser = getenv('DB_USER') ?: 'root';
-$dbPass = getenv('DB_PASS') ?: '';
+$dbHost = getenv('DB_HOST');
+$dbName = getenv('DB_NAME');
+$dbUser = getenv('DB_USER');
+$dbPass = getenv('DB_PASS');
+
+if (!$dbHost || !$dbName || !$dbUser || $dbPass === false) {
+    die('Trūksta DB_HOST, DB_NAME, DB_USER arba DB_PASS reikšmių .env faile.');
+}
 
 // Connect to server and ensure database exists
 try {

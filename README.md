@@ -4,7 +4,7 @@ PHP + MySQL prototipas su registracija, prisijungimu, administratoriaus pultu ir
 
 ## Paleidimas
 1. Duomenų bazė ir lentelės sukuriamos automatiškai pirmo prisijungimo metu pagal `.env` reikšmes, tad papildomai leisti `SOURCE schema.sql` nereikia.
-2. Nustatykite prisijungimus `.env` faile projekto šaknyje (galite kopijuoti iš `.env.example`):
+2. Nustatykite prisijungimus `.env` faile projekto šaknyje (galite kopijuoti iš `.env.example`; visos DB_* reikšmės yra privalomos):
    ```bash
    cp .env.example .env
    # pakoreguokite DB_* reikšmes pagal savo MySQL
