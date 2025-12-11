@@ -3,10 +3,7 @@
 PHP + MySQL prototipas su registracija, prisijungimu, administratoriaus pultu ir naujienų valdymu.
 
 ## Paleidimas
-1. Susikurkite duomenų bazę, pvz. `kolekcija`, ir paleiskite SQL struktūrą:
-   ```sql
-   SOURCE schema.sql;
-   ```
+1. Duomenų bazė ir lentelės sukuriamos automatiškai pirmo prisijungimo metu pagal `.env` reikšmes, tad papildomai leisti `SOURCE schema.sql` nereikia.
 2. Nustatykite prisijungimus `.env` faile projekto šaknyje (galite kopijuoti iš `.env.example`):
    ```bash
    cp .env.example .env
