@@ -47,30 +47,34 @@ render_nav();
     </div>
 </section>
 
-<section class="section partners">
+<section class="section partners-modern">
     <div class="partners-header">
-        <h2>Mūsų Partneriai</h2>
-        <p>Monetos, banknotai ir kiti kolekciniai radiniai</p>
+        <h2>Partneriai</h2>
+        <p>Apsilankykite mūsų partnerių parduotuvėse</p>
     </div>
-    
-    <div class="partner-grid">
-        <a class="partner-card" href="https://pirkis.lt/shops/30147-e-kolekcija.html" target="_blank" rel="nofollow">
-            <div class="partner-logo-container">
-                <img src="https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=606,h=304,fit=crop,trim=71.40718562874251;441.9848484848485;0;0/YZ9VqrOVpxS49M9g/pirkis2-m6Lwny9oz8tyXw83.png" alt="Pirkis.lt" loading="lazy">
+
+    <div class="partners-container">
+        <a href="https://pirkis.lt/shops/30147-e-kolekcija.html" target="_blank" rel="nofollow" class="partner-box pirkis">
+            <div class="box-content">
+                <span class="partner-label">Katalogas</span>
+                <h3>Pirkis.lt</h3>
+                <p>Patikimas asortimentas jūsų kolekcijai</p>
             </div>
-            <div class="partner-info">
-                <h3>pirkis.lt</h3>
-                <span>Patikimas mūsų katalogas</span>
+            <div class="box-action">
+                <span>Atidaryti</span>
+                <span class="arrow">&rarr;</span>
             </div>
         </a>
 
-        <a class="partner-card" href="https://allegro.pl/uzytkownik/e-Kolekcija" target="_blank" rel="nofollow">
-            <div class="partner-logo-container">
-                <img src="https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=606,h=304,fit=crop,trim=0;0;405.87740805604204;0/YZ9VqrOVpxS49M9g/allegro-YX4yvkxeqyi1r0Vz.png" alt="Allegro.pl" loading="lazy">
+        <a href="https://allegro.pl/uzytkownik/e-Kolekcija" target="_blank" rel="nofollow" class="partner-box allegro">
+            <div class="box-content">
+                <span class="partner-label">Aukcionai</span>
+                <h3>Allegro.pl</h3>
+                <p>Reti radiniai ir išskirtiniai pasiūlymai</p>
             </div>
-            <div class="partner-info">
-                <h3>allegro.pl</h3>
-                <span>Reti radiniai kolekcionieriams</span>
+            <div class="box-action">
+                <span>Atidaryti</span>
+                <span class="arrow">&rarr;</span>
             </div>
         </a>
     </div>
