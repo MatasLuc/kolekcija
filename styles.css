@@ -100,19 +100,56 @@ a:hover { text-decoration: underline; }
 
 .cards {
     display: grid;
-    gap: 20px;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 22px;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
 }
 
 .card {
+    position: relative;
     background: var(--card);
-    border-radius: 16px;
-    padding: 20px;
-    box-shadow: 0 10px 35px rgba(0,0,0,0.05);
-    border: 1px solid #e6e6e6;
+    border-radius: 18px;
+    padding: 24px;
+    box-shadow: 0 15px 45px rgba(0,0,0,0.08);
+    border: 1px solid #e1e1e1;
+    overflow: hidden;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
-.card h3 { margin-top: 0; }
+.card::before {
+    content: "";
+    position: absolute;
+    inset: -30%;
+    background: radial-gradient(circle at 20% 20%, rgba(0,0,0,0.08), transparent 40%),
+                radial-gradient(circle at 80% 0%, rgba(0,0,0,0.06), transparent 36%);
+    filter: blur(18px);
+    z-index: 0;
+    opacity: 0.7;
+    transition: opacity 0.3s ease;
+}
+
+.card::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 18px;
+    background: linear-gradient(135deg, rgba(0,0,0,0.06), rgba(0,0,0,0.02));
+    pointer-events: none;
+    z-index: 1;
+}
+
+.card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.12);
+    border-color: #d5d5d5;
+}
+
+.card > * { position: relative; z-index: 2; }
+
+.card h2,
+.card h3 {
+    margin-top: 0;
+    letter-spacing: -0.02em;
+}
 .card ul { padding-left: 20px; margin: 12px 0 0; }
 
 .footer {
