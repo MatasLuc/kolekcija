@@ -2,6 +2,9 @@
 require_once __DIR__ . '/partials.php';
 require_admin();
 
+// 1. Apsauga: Tikriname CSRF visoms POST užklausoms šiame faile
+require_csrf();
+
 // --- LOGIKA (POST užklausų apdorojimas) ---
 // Paliekame tą pačią logiką viršuje, kad ji suveiktų prieš atvaizdavimą
 
@@ -223,7 +226,7 @@ render_nav();
         <?php if ($activeTab === 'design'): ?>
             <h2>Pagrindinis puslapis (Hero)</h2>
             <form method="post" enctype="multipart/form-data">
-                <input type="hidden" name="action" value="hero">
+                <input type="hidden" name="csrf_token" value="<?php echo csrf_token(); ?>"> <input type="hidden" name="action" value="hero">
                 
                 <div class="two-up">
                     <div>
@@ -289,7 +292,7 @@ render_nav();
         <?php if ($activeTab === 'news'): ?>
             <h2>Kurti naujieną</h2>
             <form method="post" enctype="multipart/form-data" style="background:#f9f9f9; padding:20px; border-radius:12px; margin-bottom:30px;">
-                <input type="hidden" name="action" value="news">
+                <input type="hidden" name="csrf_token" value="<?php echo csrf_token(); ?>"> <input type="hidden" name="action" value="news">
                 <label>Pavadinimas</label>
                 <input name="news_title" required placeholder="Įveskite pavadinimą...">
 
@@ -326,7 +329,7 @@ render_nav();
                                     <summary class="pill" style="cursor:pointer; display:inline-block; font-size:0.8rem;">Redaguoti</summary>
                                     <div style="margin-top:15px; padding:15px; border:1px solid #ddd; border-radius:8px; background:#fff;">
                                         <form method="post" enctype="multipart/form-data">
-                                            <input type="hidden" name="action" value="news">
+                                            <input type="hidden" name="csrf_token" value="<?php echo csrf_token(); ?>"> <input type="hidden" name="action" value="news">
                                             <input type="hidden" name="news_id" value="<?php echo e($item['id']); ?>">
                                             <label>Pavadinimas</label>
                                             <input name="news_title" value="<?php echo e($item['title']); ?>" required>
@@ -339,7 +342,7 @@ render_nav();
 
                                         <h4>Galerija</h4>
                                         <form method="post" enctype="multipart/form-data" class="inline-form" style="margin-bottom:15px;">
-                                            <input type="hidden" name="action" value="news_image_add">
+                                            <input type="hidden" name="csrf_token" value="<?php echo csrf_token(); ?>"> <input type="hidden" name="action" value="news_image_add">
                                             <input type="hidden" name="news_id" value="<?php echo e($item['id']); ?>">
                                             <input type="file" name="news_image" accept="image/*" required>
                                             <input name="caption" placeholder="Aprašas" style="width:150px;">
@@ -353,14 +356,14 @@ render_nav();
                                                     <div class="news-image-card__actions" style="justify-content:space-between;">
                                                         <?php if (!$img['is_primary']): ?>
                                                             <form method="post" style="display:inline;">
-                                                                <input type="hidden" name="action" value="news_image_primary">
+                                                                <input type="hidden" name="csrf_token" value="<?php echo csrf_token(); ?>"> <input type="hidden" name="action" value="news_image_primary">
                                                                 <input type="hidden" name="news_id" value="<?php echo e($item['id']); ?>">
                                                                 <input type="hidden" name="image_id" value="<?php echo e($img['id']); ?>">
                                                                 <button class="ghost" style="font-size:0.7rem; padding:4px;">★</button>
                                                             </form>
                                                         <?php endif; ?>
                                                         <form method="post" style="display:inline;" onsubmit="return confirm('Trinti foto?');">
-                                                            <input type="hidden" name="action" value="news_image_delete">
+                                                            <input type="hidden" name="csrf_token" value="<?php echo csrf_token(); ?>"> <input type="hidden" name="action" value="news_image_delete">
                                                             <input type="hidden" name="image_id" value="<?php echo e($img['id']); ?>">
                                                             <button class="ghost danger" style="font-size:0.7rem; padding:4px;">✕</button>
                                                         </form>
@@ -371,7 +374,7 @@ render_nav();
 
                                         <hr style="margin:20px 0;">
                                         <form method="post" onsubmit="return confirm('Ar tikrai ištrinti visą naujieną?');">
-                                            <input type="hidden" name="action" value="news_delete">
+                                            <input type="hidden" name="csrf_token" value="<?php echo csrf_token(); ?>"> <input type="hidden" name="action" value="news_delete">
                                             <input type="hidden" name="news_id" value="<?php echo e($item['id']); ?>">
                                             <button type="submit" style="background:#fee; color:#c00; border:1px solid #faa;">Ištrinti naujieną</button>
                                         </form>
@@ -408,7 +411,7 @@ render_nav();
                                 <span style="color:#999; font-size:0.9rem;">(Tai jūs)</span>
                             <?php else: ?>
                                 <form method="post" style="display:flex; gap:5px;">
-                                    <input type="hidden" name="action" value="role">
+                                    <input type="hidden" name="csrf_token" value="<?php echo csrf_token(); ?>"> <input type="hidden" name="action" value="role">
                                     <input type="hidden" name="user_id" value="<?php echo e($user['id']); ?>">
                                     <select name="role" style="padding:4px; font-size:0.9rem; margin:0;">
                                         <option value="user" <?php echo $user['role'] === 'user' ? 'selected' : ''; ?>>Vartotojas</option>
