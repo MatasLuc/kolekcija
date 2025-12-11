@@ -36,6 +36,8 @@ $dbHost = getenv('DB_HOST');
 $dbName = getenv('DB_NAME');
 $dbUser = getenv('DB_USER');
 $dbPass = getenv('DB_PASS');
+$dbPort = getenv('DB_PORT') ?: '3306';
+$dbSocket = getenv('DB_SOCKET') ?: '';
 
 $missing = [];
 foreach (['DB_HOST' => $dbHost, 'DB_NAME' => $dbName, 'DB_USER' => $dbUser, 'DB_PASS' => $dbPass] as $key => $val) {
@@ -49,10 +51,15 @@ if ($missing) {
     die('Trūksta reikšmių (' . implode(', ', $missing) . ") failo {$location} faile arba aplinkoje.");
 }
 
+// Build DSNs (supporting port or unix socket)
+$serverDsn = $dbSocket
+    ? "mysql:unix_socket={$dbSocket};charset=utf8mb4"
+    : "mysql:host={$dbHost};port={$dbPort};charset=utf8mb4";
+
 // Connect to server and ensure database exists
 try {
     $serverPdo = new PDO(
-        "mysql:host={$dbHost};charset=utf8mb4",
+        $serverDsn,
         $dbUser,
         $dbPass,
         [
@@ -70,7 +77,9 @@ try {
 // Connect to the target database
 try {
     $pdo = new PDO(
-        "mysql:host={$dbHost};dbname={$dbName};charset=utf8mb4",
+        $dbSocket
+            ? "mysql:unix_socket={$dbSocket};dbname={$dbName};charset=utf8mb4"
+            : "mysql:host={$dbHost};port={$dbPort};dbname={$dbName};charset=utf8mb4",
         $dbUser,
         $dbPass,
         [
