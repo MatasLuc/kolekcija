@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '/functions.php';
+require_once __DIR__ . '/partials.php';
 
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {

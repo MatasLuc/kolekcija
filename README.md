@@ -7,7 +7,12 @@ PHP + MySQL prototipas su registracija, prisijungimu, administratoriaus pultu ir
    ```sql
    SOURCE schema.sql;
    ```
-2. Nustatykite aplinkos kintamuosius (arba redaguokite `config.php`):
+2. Nustatykite prisijungimus `.env` faile projekto šaknyje (galite kopijuoti iš `.env.example`):
+   ```bash
+   cp .env.example .env
+   # pakoreguokite DB_* reikšmes pagal savo MySQL
+   ```
+   Arba eksportuokite kintamuosius į aplinką:
    ```bash
    export DB_HOST=localhost
    export DB_NAME=kolekcija
