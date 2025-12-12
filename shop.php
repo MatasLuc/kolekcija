@@ -12,18 +12,28 @@ $categories = $categoriesStmt->fetchAll(PDO::FETCH_COLUMN);
 $whereClauses = [];
 $params = [];
 
+// 1. Kategorija
 $selectedCategory = $_GET['category'] ?? null;
 if ($selectedCategory) {
     $whereClauses[] = "category = :category";
     $params[':category'] = $selectedCategory;
 }
 
+// 2. Šalis
 $selectedCountry = $_GET['country'] ?? null;
 if ($selectedCountry === 'nepriskirta') {
     $whereClauses[] = "(country IS NULL OR country = '')";
 } elseif ($selectedCountry) {
     $whereClauses[] = "country = :country";
     $params[':country'] = $selectedCountry;
+}
+
+// 3. Paieška (NAUJA)
+$search = trim($_GET['search'] ?? '');
+if ($search) {
+    // Ieškome pavadinime arba išoriniame ID
+    $whereClauses[] = "(title LIKE :search OR external_id LIKE :search)";
+    $params[':search'] = '%' . $search . '%';
 }
 
 $whereSql = '';
@@ -70,8 +80,7 @@ render_nav();
 <div class="section" style="padding-bottom: 0;">
     <div class="partners-header">
         <h2>Kolekcijos parduotuvė</h2>
-        <p>Viso prekių: <?php echo $total; ?></p>
-    </div>
+        </div>
 
     <div class="shop-notice-wrapper" style="max-width: 1000px; margin: 0 auto 40px auto;">
         <div class="shop-info-card">
@@ -83,45 +92,67 @@ render_nav();
             <div class="shop-info-content">
                 <h3>Kaip pirkti?</h3>
                 <p>
-                    Ši svetainė veikia kaip mūsų kolekcijos katalogas. Pirkimo procesas yra vykdomas saugiai per mūsų partnerių platformą 					<strong>Pirkis.lt</strong>. 
+                    Ši svetainė veikia kaip mūsų kolekcijos katalogas. Pirkimo procesas yra vykdomas saugiai per mūsų partnerių platformą <strong>Pirkis.lt</strong>. 
                     Paspaudę mygtuką <span style="color:#85bf27; font-weight:600;">Pirkti</span>, būsite nukreipti į konkrečią prekę ten.
                     <br><br>
                     <span style="font-size: 0.9rem; color: #888;">
                         * Duomenys atnaujinami automatiškai, tačiau esant nesutapimams tarp šio katalogo ir Pirkis.lt (kaina ar likutis), 
                         prašome vadovautis informacija, pateikta <strong>Pirkis.lt</strong> sistemoje.
                     </span>
-					</p>
-				</div>
-			</div>
-		</div>
-
-    <div class="filter-bar">
-        
-        <details class="custom-select">
-            <summary><?php echo $selectedCategory ? htmlspecialchars($selectedCategory) : 'Kategorija'; ?></summary>
-            <div class="dropdown-menu">
-                <a href="<?php echo filterUrl('category', null); ?>" class="<?php echo !$selectedCategory ? 'active' : ''; ?>">Visos</a>
-                <?php foreach ($categories as $cat): ?>
-                    <a href="<?php echo filterUrl('category', $cat); ?>" class="<?php echo $selectedCategory === $cat ? 'active' : ''; ?>"><?php echo e($cat); ?></a>
-                <?php endforeach; ?>
+                </p>
             </div>
-        </details>
-
-        <details class="custom-select">
-            <summary><?php echo $selectedCountry ? (($selectedCountry === 'nepriskirta') ? 'Nepriskirta' : htmlspecialchars($selectedCountry)) : 'Valstybė'; ?></summary>
-            <div class="dropdown-menu">
-                <a href="<?php echo filterUrl('country', null); ?>" class="<?php echo !$selectedCountry ? 'active' : ''; ?>">Visos</a>
-                <a href="<?php echo filterUrl('country', 'nepriskirta'); ?>" class="<?php echo $selectedCountry === 'nepriskirta' ? 'active' : ''; ?>" style="color:#d32f2f;">Nepriskirta</a>
-                <?php foreach ($countries as $c): ?>
-                    <a href="<?php echo filterUrl('country', $c); ?>" class="<?php echo $selectedCountry === $c ? 'active' : ''; ?>"><?php echo e($c); ?></a>
-                <?php endforeach; ?>
-            </div>
-        </details>
-
-        <?php if ($selectedCategory || $selectedCountry): ?>
-            <a href="shop.php" class="clear-filters">Išvalyti filtrus ✕</a>
-        <?php endif; ?>
+        </div>
     </div>
+
+    <div class="filter-bar" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 15px;">
+        
+        <div style="display:flex; gap:15px; flex-wrap:wrap;">
+            <details class="custom-select">
+                <summary><?php echo $selectedCategory ? htmlspecialchars($selectedCategory) : 'Kategorija'; ?></summary>
+                <div class="dropdown-menu">
+                    <a href="<?php echo filterUrl('category', null); ?>" class="<?php echo !$selectedCategory ? 'active' : ''; ?>">Visos</a>
+                    <?php foreach ($categories as $cat): ?>
+                        <a href="<?php echo filterUrl('category', $cat); ?>" class="<?php echo $selectedCategory === $cat ? 'active' : ''; ?>"><?php echo e($cat); ?></a>
+                    <?php endforeach; ?>
+                </div>
+            </details>
+
+            <details class="custom-select">
+                <summary><?php echo $selectedCountry ? (($selectedCountry === 'nepriskirta') ? 'Nepriskirta' : htmlspecialchars($selectedCountry)) : 'Valstybė'; ?></summary>
+                <div class="dropdown-menu">
+                    <a href="<?php echo filterUrl('country', null); ?>" class="<?php echo !$selectedCountry ? 'active' : ''; ?>">Visos</a>
+                    <a href="<?php echo filterUrl('country', 'nepriskirta'); ?>" class="<?php echo $selectedCountry === 'nepriskirta' ? 'active' : ''; ?>" style="color:#d32f2f;">Nepriskirta</a>
+                    <?php foreach ($countries as $c): ?>
+                        <a href="<?php echo filterUrl('country', $c); ?>" class="<?php echo $selectedCountry === $c ? 'active' : ''; ?>"><?php echo e($c); ?></a>
+                    <?php endforeach; ?>
+                </div>
+            </details>
+        </div>
+
+        <div style="display:flex; align-items:center; gap: 20px; margin-left: auto;">
+            <?php if ($selectedCategory || $selectedCountry || $search): ?>
+                <a href="shop.php" class="clear-filters" style="margin:0;">Išvalyti filtrus ✕</a>
+            <?php endif; ?>
+            <span style="font-weight: 600; font-size: 0.95rem; color: #333; white-space: nowrap;">Viso: <?php echo $total; ?></span>
+        </div>
+    </div>
+
+    <div style="max-width: 100%; margin-bottom: 30px;">
+        <form action="shop.php" method="get" style="display: flex; gap: 10px;">
+            <?php if ($selectedCategory): ?><input type="hidden" name="category" value="<?php echo e($selectedCategory); ?>"><?php endif; ?>
+            <?php if ($selectedCountry): ?><input type="hidden" name="country" value="<?php echo e($selectedCountry); ?>"><?php endif; ?>
+            
+            <input 
+                type="text" 
+                name="search" 
+                value="<?php echo e($search); ?>" 
+                placeholder="Ieškoti pavadinimo..." 
+                style="flex-grow: 1; padding: 12px 20px; border-radius: 30px; border: 1px solid #ddd; font-size: 1rem; margin-top:0;"
+            >
+            <button type="submit" style="border-radius: 30px; margin-top:0; padding-left: 30px; padding-right: 30px;">Ieškoti</button>
+        </form>
+    </div>
+
 </div>
 
 <div class="section" style="padding-top: 0;">
@@ -130,6 +161,16 @@ render_nav();
     <?php else: ?>
         <div class="products-grid">
             <?php foreach ($products as $item): ?>
+                <?php
+                // --- PAVADINIMŲ VALYMAS ---
+                $displayTitle = $item['title'];
+                // Keičiame 2 ar daugiau taškų į tarpą (pvz. "Pavadinimas......" -> "Pavadinimas ")
+                $displayTitle = preg_replace('/\.{2,}/', ' ', $displayTitle);
+                // Keičiame 2 ar daugiau apatinių brūkšnių į tarpą (pvz. "Pavadinimas___" -> "Pavadinimas ")
+                $displayTitle = preg_replace('/_{2,}/', ' ', $displayTitle);
+                $displayTitle = trim($displayTitle);
+                ?>
+
                 <article class="product-card">
                     <a href="<?php echo e($item['url']); ?>" target="_blank" class="product-image-wrap">
                         <div class="product-badges">
@@ -142,7 +183,7 @@ render_nav();
                         <?php endif; ?>
                     </a>
                     <div class="product-info">
-                        <h3 class="product-title"><a href="<?php echo e($item['url']); ?>" target="_blank"><?php echo e($item['title']); ?></a></h3>
+                        <h3 class="product-title"><a href="<?php echo e($item['url']); ?>" target="_blank"><?php echo e($displayTitle); ?></a></h3>
                         <div class="product-meta"><?php echo $item['category'] ? e($item['category']) : '&nbsp;'; ?></div>
                         <div class="product-footer">
                             <span class="product-price"><?php echo number_format($item['price'], 2); ?> €</span>
