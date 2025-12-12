@@ -1,10 +1,10 @@
 <?php
-// scraper.php - V21 (Enterprise: Delta Checks + Strict Source Protection + Atomic State)
+// scraper.php - V23 (Enterprise: Retry Logic + UA Rotation + No Proxy)
 set_time_limit(0);
 ignore_user_abort(true);
 
 // ---------------------------------------------------------
-// 1. GLOBALUS PROCESO UŽRAKTAS (CRITICAL SECTION)
+// 1. GLOBALUS PROCESO UŽRAKTAS
 // ---------------------------------------------------------
 $lockFile = __DIR__ . '/scraper.lock';
 $fpLock = fopen($lockFile, 'w+');
@@ -20,7 +20,7 @@ $shopId = '30147';
 $baseUrl = "https://pirkis.lt/shops/{$shopId}-e-Kolekcija.html";
 $perPage = 20;
 $maxLimit = 3000;
-$cronTimeLimit = 20;    
+$cronTimeLimit = 25;    
 $cooldownTime = 3600;   
 $stateFile = __DIR__ . '/scraper_state.json';
 $minItemsToAllowDelete = 100;
@@ -28,34 +28,70 @@ $minItemsToAllowDelete = 100;
 $mode = isset($_GET['mode']) ? $_GET['mode'] : 'browser'; 
 $secret = 'ManoSlaptasRaktas123'; 
 
+// USER-AGENT SĄRAŠAS (Rotacijai)
+// Tai apsimeta, kad ateina vis kita naršyklė/įrenginys
+$userAgents = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/120.0',
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Mobile/15E148 Safari/604.1'
+];
+
 // ---------------------------------------------------------
 // PAGALBINĖS FUNKCIJOS
 // ---------------------------------------------------------
 
-function fetchUrl($url) {
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 15);
-    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-    $data = curl_exec($ch);
-    curl_close($ch);
-    return $data;
+/**
+ * fetchUrl su Retry (Bandymų) logika ir User-Agent rotacija
+ */
+function fetchUrl($url, $retries = 3) {
+    global $userAgents;
+
+    $attempt = 0;
+    
+    while ($attempt <= $retries) {
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+        
+        // Random User-Agent kiekvienam bandymui
+        $randomAgent = $userAgents[array_rand($userAgents)];
+        curl_setopt($ch, CURLOPT_USERAGENT, $randomAgent);
+
+        $data = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        // Sėkmės sąlyga: Gavome duomenis IR serveris grąžino 200 OK
+        if ($data !== false && $httpCode === 200 && strlen($data) > 100) {
+            return $data;
+        }
+
+        // Jei nepavyko - Exponential Backoff (laukimas)
+        $attempt++;
+        if ($attempt <= $retries) {
+            $sleepTime = pow(2, $attempt); // 2s, 4s, 8s...
+            
+            if (isset($_GET['mode']) && $_GET['mode'] === 'browser') {
+                echo "<div style='color:orange'>Klaida (HTTP $httpCode). Bandymas $attempt/$retries. Laukiama {$sleepTime}s...</div>";
+                if (ob_get_level() > 0) { ob_flush(); flush(); }
+            }
+            sleep($sleepTime);
+        }
+    }
+    
+    return false; // Nepavyko
 }
 
-// ATOMINIS ĮRAŠYMAS (Atomic Write + LOCK_EX)
 function saveState($file, $state) {
     $tempFile = $file . '.tmp';
     $json = json_encode($state, JSON_PRETTY_PRINT);
-    
-    // Rašome į laikiną failą su užraktu
-    if (file_put_contents($tempFile, $json, LOCK_EX) === false) {
-        return false;
-    }
-    
-    // Atomic rename
+    if (file_put_contents($tempFile, $json, LOCK_EX) === false) return false;
     return rename($tempFile, $file);
 }
 
@@ -71,7 +107,6 @@ function finish_cycle($state, $stateFile, $pdo, $minItemsToAllowDelete) {
     $currentCycleId = $state['cycle_id'];
     $totalFound = isset($state['total_processed']) ? (int)$state['total_processed'] : 0;
     
-    // SAUGIKLIS
     if ($totalFound < $minItemsToAllowDelete) {
         $state['start'] = 0;
         $state['status'] = 'finished';
@@ -83,7 +118,6 @@ function finish_cycle($state, $stateFile, $pdo, $minItemsToAllowDelete) {
 
     $deleted = 0;
     if (!empty($currentCycleId)) {
-        // TRYNIMAS: Griežtai tik source='pirkis'
         $stmt = $pdo->prepare("DELETE FROM products WHERE source = 'pirkis' AND (cycle_id != ? OR cycle_id IS NULL)");
         $stmt->execute([$currentCycleId]);
         $deleted = $stmt->rowCount();
@@ -113,19 +147,14 @@ if ($mode === 'cron') {
 
 $state = ['start' => 0, 'status' => 'running', 'last_run' => 0, 'cycle_id' => uniqid('RUN_'), 'total_processed' => 0];
 
-// SAUGUS NUSKAITYMAS
 if (file_exists($stateFile)) {
     $content = file_get_contents($stateFile);
     if ($content) {
         $decoded = json_decode($content, true);
-        // Tikriname, ar JSON nesugadintas
-        if (is_array($decoded)) {
-            $state = array_merge($state, $decoded);
-        }
+        if (is_array($decoded)) $state = array_merge($state, $decoded);
     }
 }
 
-// CIKLO VALDYMAS
 if ($mode === 'cron' && ($state['status'] ?? '') === 'finished') {
     $secondsSinceFinish = time() - ($state['last_run'] ?? 0);
     if ($secondsSinceFinish < $cooldownTime) {
@@ -139,30 +168,23 @@ if ($mode === 'cron' && ($state['status'] ?? '') === 'finished') {
     }
 }
 
-// Griežtas ID resetas startuojant
-if ($state['start'] == 0 && $mode === 'cron') {
-    // Užtikriname, kad turime unikalų ID šiam bėgimui, jei jis kažkodėl senas
-    if (empty($state['cycle_id'])) {
-        $state['cycle_id'] = uniqid('RUN_');
-        saveState($stateFile, $state);
-    }
+if ($state['start'] == 0 && $mode === 'cron' && empty($state['cycle_id'])) {
+    $state['cycle_id'] = uniqid('RUN_');
+    saveState($stateFile, $state);
 }
 
 $start = $mode === 'browser' ? (isset($_GET['start']) ? (int)$_GET['start'] : 0) : $state['start'];
 
 if ($mode === 'browser') {
     echo '<body style="font-family: monospace; background: #222; color: #0f0; padding: 20px; line-height: 1.5;">';
-    echo "<h2>DUOMENŲ NUSKAITYMAS (V21 - Enterprise)</h2>";
+    echo "<h2>DUOMENŲ NUSKAITYMAS (V23 - Enterprise Lite)</h2>";
     echo "<p>Ciklo ID: <strong>{$state['cycle_id']}</strong></p><hr>";
 }
 
 // ---------------------------------------------------------
-// 2. PARUOŠIAME SQL UŽKLAUSAS (PREPARED STATEMENTS)
+// SQL PREPARE
 // ---------------------------------------------------------
-// Tai daroma VIENĄ KARTĄ per skripto vykdymą, ne cikle.
 
-// A. UPSERT (Įterpti arba Atnaujinti)
-// Svarbu: source nustatomas tik įterpiant. Atnaujinant source neliečiamas (saugiau).
 $upsertStmt = $pdo->prepare("
     INSERT INTO products (external_id, title, price, image_url, url, country, category, cycle_id, source, scraped_at) 
     VALUES (:eid, :title, :price, :img, :url, :country, :category, :cid, 'pirkis', NOW())
@@ -176,22 +198,16 @@ $upsertStmt = $pdo->prepare("
         scraped_at = NOW()
 ");
 
-// B. TOUCH (Tik atnaujinti laiką ir ID)
-// Svarbu: WHERE source='pirkis' apsaugo rankines prekes.
 $touchStmt = $pdo->prepare("
-    UPDATE products 
-    SET cycle_id = ?, scraped_at = NOW() 
-    WHERE external_id = ? AND source = 'pirkis'
+    UPDATE products SET cycle_id = ?, scraped_at = NOW() WHERE external_id = ? AND source = 'pirkis'
 ");
 
-
 // ---------------------------------------------------------
-// 3. CIKLAS
+// CIKLAS
 // ---------------------------------------------------------
 $startTime = microtime(true);
 
 do {
-    // 1. LIMITAI
     if ($start > $maxLimit) {
         if ($mode === 'cron') finish_cycle($state, $stateFile, $pdo, $minItemsToAllowDelete);
         die("STOP: Pasiektas limitas.");
@@ -201,19 +217,21 @@ do {
         stopAndSave($stateFile, $state, $start, "Laikas baigėsi ($start).");
     }
 
-    // 2. GAVIMAS
     $listUrl = $baseUrl . '?start=' . $start;
     if ($mode === 'browser') echo "<strong>Puslapis:</strong> start=$start ... <br>";
     
     $html = fetchUrl($listUrl);
 
-    if (!$html || strlen($html) < 500) {
-        if ($mode === 'cron') stopAndSave($stateFile, $state, $start, "Klaida: HTML tuščias.");
-        sleep(2); continue;
+    if (!$html) {
+        if ($mode === 'cron') stopAndSave($stateFile, $state, $start, "Klaida: Nepavyko gauti HTML po pakartojimų.");
+        die("Klaida: Nepavyko gauti turinio.");
     }
 
     $dom = new DOMDocument();
-    @$dom->loadHTML($html);
+    libxml_use_internal_errors(true);
+    @$dom->loadHTML('<?xml encoding="UTF-8">' . $html);
+    libxml_clear_errors();
+    
     $xpath = new DOMXPath($dom);
     $productNodes = $xpath->query("//div[contains(@class, 'uk-prekes-row')]");
 
@@ -227,19 +245,16 @@ do {
         break; 
     }
 
-    // --- A. GAVIMAS (RAW) ---
     $batchItems = [];
     $idsToFetch = [];
 
     foreach ($productNodes as $node) {
         $rowId = $node->getAttribute('id'); 
         $externalId = str_replace('item-row-', '', $rowId);
-
         $linkNode = $xpath->query(".//div[contains(@class, 'uk-prekes-title')]//a", $node)->item(0);
         if (!$linkNode) continue;
 
         $title = trim($linkNode->textContent);
-        
         $href = $linkNode->getAttribute('href');
         if (strpos($href, '/') !== 0) $href = '/' . $href;
         $url = "https://pirkis.lt" . $href;
@@ -249,47 +264,30 @@ do {
         $price = (float)str_replace([',', ' €', ' '], ['.', '', ''], $priceRaw);
 
         if ($externalId && $title) {
-            $batchItems[] = [
-                'eid' => $externalId, 
-                'title' => $title, 
-                'price' => $price, 
-                'url' => $url
-            ];
+            $batchItems[] = ['eid' => $externalId, 'title' => $title, 'price' => $price, 'url' => $url];
             $idsToFetch[] = $externalId;
         }
     }
 
-    // --- B. BULK SELECT (TIK 'PIRKIS' ŠALTINIO) ---
     $existingMap = [];
     if (!empty($idsToFetch)) {
         $placeholders = implode(',', array_fill(0, count($idsToFetch), '?'));
-        // Paimame ir Title, Price, kad galėtume palyginti (Delta Check)
-        // SVARBU: source='pirkis' - kitų šaltinių prekes ignoruojame (laikome, kad jos neegzistuoja šiam skreiperiui)
-        $stmt = $pdo->prepare("
-            SELECT external_id, title, price, image_url, country, category 
-            FROM products 
-            WHERE source = 'pirkis' AND external_id IN ($placeholders)
-        ");
+        $stmt = $pdo->prepare("SELECT external_id, title, price, image_url, country, category FROM products WHERE source = 'pirkis' AND external_id IN ($placeholders)");
         $stmt->execute($idsToFetch);
-        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-            $existingMap[$row['external_id']] = $row;
-        }
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) $existingMap[$row['external_id']] = $row;
     }
 
-    // --- C. APDOROJIMAS ---
     foreach ($batchItems as $item) {
         if ($mode === 'cron' && (microtime(true) - $startTime) > ($cronTimeLimit - 3)) {
-            stopAndSave($stateFile, $state, $start, "Laikas baigėsi viduryje puslapio ($start).");
+            stopAndSave($stateFile, $state, $start, "Laikas baigėsi ($start).");
         }
 
         $eid = $item['eid'];
         $existing = isset($existingMap[$eid]) ? $existingMap[$eid] : null; 
-        
         $hasPhoto = ($existing && !empty($existing['image_url']));
         $imgUrl = $hasPhoto ? $existing['image_url'] : '';
         $shouldUpdateDB = false;
 
-        // 1. LAZY DETECTION (Tik jei nauja arba trūksta duomenų)
         $country = $existing['country'] ?? null;
         $category = $existing['category'] ?? null;
 
@@ -299,58 +297,42 @@ do {
             $shouldUpdateDB = true; 
         }
 
-        // 2. DELTA CHECK (TIKRINAME AR PASIKEITĖ DUOMENYS)
         if ($existing) {
-            // Pavadinimas pasikeitė?
             if ($existing['title'] !== $item['title']) $shouldUpdateDB = true;
-            // Kaina pasikeitė? (Float lyginimas)
             if (abs((float)$existing['price'] - $item['price']) > 0.001) $shouldUpdateDB = true;
         } else {
-            // Jei nėra DB (arba tai 'manual' prekė, kurią ignoruojame map'e) -> Nauja prekė
             $shouldUpdateDB = true;
         }
 
-        // 3. FOTO
         if ($shouldUpdateDB && !$hasPhoto) {
             usleep(200000); 
             $innerHtml = fetchUrl($item['url']);
             if ($innerHtml) {
                 $innerDom = new DOMDocument();
-                @$innerDom->loadHTML($innerHtml);
+                libxml_use_internal_errors(true);
+                @$innerDom->loadHTML('<?xml encoding="UTF-8">' . $innerHtml);
+                libxml_clear_errors();
                 $innerXpath = new DOMXPath($innerDom);
 
                 $linkImg = $innerXpath->query("//a[@id='img1']")->item(0);
                 if ($linkImg) {
                     $imgUrl = $linkImg->getAttribute('href');
-                    $shouldUpdateDB = true; // Radom foto -> reikia update
+                    $shouldUpdateDB = true; 
                 } elseif ($metaImg = $innerXpath->query("//meta[@itemprop='http://schema.org/image']")->item(0)) {
                     $imgUrl = $metaImg->getAttribute('content');
                     $shouldUpdateDB = true;
                 }
-                
-                if ($imgUrl && strpos($imgUrl, 'http') === false) {
-                    $imgUrl = "https://pirkis.lt" . (strpos($imgUrl, '/') === 0 ? '' : '/') . $imgUrl;
-                }
+                if ($imgUrl && strpos($imgUrl, 'http') === false) $imgUrl = "https://pirkis.lt" . (strpos($imgUrl, '/') === 0 ? '' : '/') . $imgUrl;
             }
         }
 
-        // --- D. VEIKSMAS (EXECUTE) ---
         if ($shouldUpdateDB) {
-            // UPSERT (Vienas brangus veiksmas)
             $upsertStmt->execute([
-                ':eid' => $eid, 
-                ':title' => $item['title'], 
-                ':price' => $item['price'], 
-                ':img' => $imgUrl, 
-                ':url' => $item['url'], 
-                ':country' => $country, 
-                ':category' => $category, 
-                ':cid' => $state['cycle_id']
+                ':eid' => $eid, ':title' => $item['title'], ':price' => $item['price'], ':img' => $imgUrl, 
+                ':url' => $item['url'], ':country' => $country, ':category' => $category, ':cid' => $state['cycle_id']
             ]);
             if ($mode === 'browser') echo "ID: $eid [UPSERT]<br>";
         } else {
-            // TOUCH (Pigus veiksmas)
-            // Svarbu: source='pirkis' jau yra WHERE sąlygoje prepared statement'e
             $touchStmt->execute([$state['cycle_id'], $eid]);
         }
         
