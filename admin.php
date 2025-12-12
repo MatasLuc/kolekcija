@@ -74,74 +74,90 @@ function upload_hero_media(array $file, string $type, string $uploadDir): array
 
 // --- LOGIKA (POST UŽKLAUSOS) ---
 
-// 1. PRODUKTŲ VALDYMAS
+$duplicatesResult = []; 
+$staleResult = []; 
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'products_control') {
     $subAction = $_POST['sub_action'] ?? '';
 
     if ($subAction === 'delete_all') {
-        // 1. Ištriname visus produktus
         $pdo->exec("TRUNCATE TABLE products");
-        
-        // 2. Nuresetiname Cron būseną į pradžią (0)
         $stateFile = __DIR__ . '/scraper_state.json';
-        // 'status' => 'running' priverčia croną veikti iškart (nelaukiant cooldown)
         $newState = ['start' => 0, 'status' => 'running', 'last_run' => 0, 'history' => []];
         file_put_contents($stateFile, json_encode($newState));
-
-        set_alert('success', 'Visos prekės ištrintos. Scraperis nustatytas į 0 ir pradės darbą automatiškai (su sekančiu Cron ciklu).');
+        set_alert('success', 'Visos prekės ištrintos. Scraperis nustatytas į 0.');
         
     } elseif ($subAction === 'reset_countries') {
         $pdo->exec("UPDATE products SET country = NULL, category = NULL");
         set_alert('success', 'Visų prekių šalių ir kategorijų priskyrimai panaikinti.');
         
     } elseif ($subAction === 'detect_countries') {
-        // Atnaujiname ir šalis, ir kategorijas
         $stmt = $pdo->query("SELECT id, title, url FROM products");
         $count = 0;
-        
         while ($row = $stmt->fetch()) {
             $country = function_exists('detect_country') ? detect_country($row['title']) : null;
             $category = function_exists('detect_category') ? detect_category($row['url']) : null;
-            
             if ($country || $category) {
                 $sql = "UPDATE products SET ";
                 $params = [];
-                
-                if ($country) {
-                    $sql .= "country = ?, ";
-                    $params[] = $country;
-                }
-                if ($category) {
-                    $sql .= "category = ?, ";
-                    $params[] = $category;
-                }
-                
+                if ($country) { $sql .= "country = ?, "; $params[] = $country; }
+                if ($category) { $sql .= "category = ?, "; $params[] = $category; }
                 $sql = rtrim($sql, ", ");
                 $sql .= " WHERE id = ?";
                 $params[] = $row['id'];
-                
                 $pdo->prepare($sql)->execute($params);
                 $count++;
             }
         }
-        set_alert('success', "Informacija atnaujinta $count prekėms (Šalys ir Kategorijos).");
+        set_alert('success', "Informacija atnaujinta $count prekėms.");
         
     } elseif ($subAction === 'reset_cron') {
-        // TIK NURESETINTI CRON (BE IŠTRYNIMO)
         $stateFile = __DIR__ . '/scraper_state.json';
         $newState = ['start' => 0, 'status' => 'running', 'last_run' => 0, 'history' => []];
-        // Jei failas jau yra, stengiamės išsaugoti istoriją, bet nuresetinti startą
         if (file_exists($stateFile)) {
             $old = json_decode(file_get_contents($stateFile), true);
             if ($old && isset($old['history'])) $newState['history'] = $old['history'];
         }
         file_put_contents($stateFile, json_encode($newState));
-        set_alert('success', 'Cron skaitiklis sėkmingai nustatytas į 0.');
+        set_alert('success', 'Cron skaitiklis nustatytas į 0.');
+
+    } elseif ($subAction === 'check_duplicates') {
+        $sql = "SELECT url, COUNT(*) as cnt, GROUP_CONCAT(id) as ids, MIN(title) as sample_title
+                FROM products GROUP BY url HAVING cnt > 1";
+        $duplicatesResult = $pdo->query($sql)->fetchAll();
+        if (empty($duplicatesResult)) {
+            set_alert('success', 'Puiku! Dublikatų (identiškų nuorodų) nerasta.');
+        } else {
+            set_alert('error', 'Rasta dublikatų: ' . count($duplicatesResult) . ' skirtingų nuorodų turi pasikartojimų.');
+        }
+
+    } elseif ($subAction === 'remove_duplicates') {
+        $sql = "DELETE p1 FROM products p1 INNER JOIN products p2 WHERE p1.url = p2.url AND p1.id < p2.id";
+        $stmt = $pdo->query($sql);
+        $deleted = $stmt->rowCount();
+        set_alert('success', "Sėkmingai ištrinta $deleted pasikartojančių prekių.");
+
+    } elseif ($subAction === 'check_stale') {
+        $sql = "SELECT id, title, scraped_at FROM products WHERE scraped_at < (NOW() - INTERVAL 48 HOUR) ORDER BY scraped_at ASC LIMIT 50";
+        $staleResult = $pdo->query($sql)->fetchAll();
+        if (empty($staleResult)) {
+            set_alert('success', 'Visos prekės yra naujos (atnaujintos per paskutines 48 val.).');
+        } else {
+            $countTotal = $pdo->query("SELECT COUNT(*) FROM products WHERE scraped_at < (NOW() - INTERVAL 48 HOUR)")->fetchColumn();
+            set_alert('error', "Rasta $countTotal senų prekių.");
+        }
+
+    } elseif ($subAction === 'remove_stale') {
+        $sql = "DELETE FROM products WHERE scraped_at < (NOW() - INTERVAL 48 HOUR)";
+        $stmt = $pdo->query($sql);
+        $deleted = $stmt->rowCount();
+        set_alert('success', "Ištrinta $deleted senų prekių.");
     }
 }
 
 // 2. DIZAINAS (HERO)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'hero') {
+    // ... (kodas nepakeistas) ...
     $hStmt = $pdo->query('SELECT media_value FROM hero_content WHERE id = 1');
     $curr = $hStmt->fetch();
     $mediaValue = $curr['media_value'] ?? '';
@@ -178,6 +194,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'hero'
 
 // 3. NAUJIENOS
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'news') {
+    // ... (kodas nepakeistas) ...
     $title = trim($_POST['news_title']);
     $body = trim($_POST['news_body']);
     $id = $_POST['news_id'] ?? '';
@@ -201,8 +218,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'news'
     }
 }
 
-// 4. PAPILDOMI NAUJIENŲ VEIKSMAI
+// 4. KITI VEIKSMAI (paveiksliukai, trynimas)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+     // ... (kodas nepakeistas) ...
     $act = $_POST['action'] ?? '';
     if ($act === 'news_image_add') {
         [$ok, $msg] = upload_news_image((int)$_POST['news_id'], $_FILES['news_image'], $_POST['caption'], $uploadDir, $pdo);
@@ -230,13 +248,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->prepare('DELETE FROM news WHERE id = ?')->execute([$_POST['news_id']]);
         set_alert('success', 'Naujiena ištrinta.');
     }
-}
-
-// 5. VARTOTOJŲ ROLĖS
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'role') {
-    $role = $_POST['role'] === 'admin' ? 'admin' : 'user';
-    $pdo->prepare('UPDATE users SET role = ? WHERE id = ?')->execute([$role, $_POST['user_id']]);
-    set_alert('success', 'Vartotojo rolė pakeista.');
+    if ($act === 'role') {
+        $role = $_POST['role'] === 'admin' ? 'admin' : 'user';
+        $pdo->prepare('UPDATE users SET role = ? WHERE id = ?')->execute([$role, $_POST['user_id']]);
+        set_alert('success', 'Vartotojo rolė pakeista.');
+    }
 }
 
 
@@ -261,7 +277,7 @@ foreach ($imagesRaw as $img) $imagesByNews[$img['news_id']][] = $img;
 // Vartotojai
 $usersList = $pdo->query('SELECT * FROM users ORDER BY name ASC')->fetchAll();
 
-// Produktų statistika (tik jei aktyvus tabas)
+// Produktų statistika
 $productStats = [];
 $scraperState = ['start' => 0, 'status' => 'Nežinoma', 'last_run' => 0, 'history' => []];
 
@@ -271,7 +287,6 @@ if ($activeTab === 'products') {
     $productStats['with_category'] = $pdo->query("SELECT COUNT(*) FROM products WHERE category IS NOT NULL AND category != ''")->fetchColumn();
     $productStats['without_country'] = $productStats['total'] - $productStats['with_country'];
     
-    // Nuskaitome scraperio būseną
     if (file_exists(__DIR__ . '/scraper_state.json')) {
         $json = json_decode(file_get_contents(__DIR__ . '/scraper_state.json'), true);
         if ($json) $scraperState = array_merge($scraperState, $json);
@@ -471,7 +486,6 @@ render_nav();
                 
                 <div style="border:1px solid #ddd; padding:20px; border-radius:12px;">
                     <h3>1. Automatinis nuskaitymas (Cron)</h3>
-                    
                     <div style="background:#f9f9f9; padding:15px; border-radius:8px; margin-bottom:20px; border:1px solid #eee;">
                         <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
                             <span><strong>Būsena:</strong> 
@@ -524,7 +538,6 @@ render_nav();
                         <a href="scraper.php" target="_blank" class="cta" style="background:#000; color:#fff; text-decoration:none; display:inline-block; padding:8px 16px; border-radius:6px; font-size:0.9rem;">
                             Atidaryti Scraper (Testui) &nearr;
                         </a>
-
                         <form method="post" onsubmit="return confirm('Ar tikrai norite nustatyti skaitiklį į 0?');">
                              <input type="hidden" name="csrf_token" value="<?php echo csrf_token(); ?>">
                              <input type="hidden" name="action" value="products_control">
@@ -554,8 +567,93 @@ render_nav();
                     </form>
                 </div>
 
+                <div style="border:1px solid #b3e5fc; background:#e1f5fe; padding:20px; border-radius:12px;">
+                    <h3>3. Dublikatų valdymas</h3>
+                    <p>Patikrinkite, ar duomenų bazėje nėra prekių su identišku URL adresu.</p>
+                    
+                    <form method="post">
+                        <input type="hidden" name="csrf_token" value="<?php echo csrf_token(); ?>">
+                        <input type="hidden" name="action" value="products_control">
+                        <input type="hidden" name="sub_action" value="check_duplicates">
+                        <button type="submit" style="background:#0288d1; border:none; color:white; padding:8px 16px; border-radius:6px; font-size:0.9rem; cursor:pointer;">Tikrinti dublikatus</button>
+                    </form>
+
+                    <?php if (!empty($duplicatesResult)): ?>
+                        <div style="margin-top:20px; background:#fff; padding:15px; border-radius:8px; border:1px solid #b3e5fc;">
+                            <h4 style="margin-top:0;">Rasta <?php echo count($duplicatesResult); ?> pasikartojančių nuorodų</h4>
+                            <div style="max-height:200px; overflow-y:auto; border:1px solid #eee; margin-bottom:15px;">
+                                <table class="table" style="font-size:0.85rem;">
+                                    <thead><tr><th>URL</th><th>Kiekis</th><th>Pvz. pavadinimas</th></tr></thead>
+                                    <tbody>
+                                        <?php foreach ($duplicatesResult as $dup): ?>
+                                            <tr>
+                                                <td style="word-break:break-all;"><?php echo e($dup['url']); ?></td>
+                                                <td><strong><?php echo $dup['cnt']; ?></strong></td>
+                                                <td><?php echo e($dup['sample_title']); ?></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <form method="post" onsubmit="return confirm('Ar tikrai norite ištrinti dublikatus?');">
+                                <input type="hidden" name="csrf_token" value="<?php echo csrf_token(); ?>">
+                                <input type="hidden" name="action" value="products_control">
+                                <input type="hidden" name="sub_action" value="remove_duplicates">
+                                <button type="submit" style="background:#0277bd; border:none; color:white; padding:10px 20px; border-radius:6px; font-weight:bold; cursor:pointer;">Ištrinti dublikatus</button>
+                            </form>
+                        </div>
+                    <?php endif; ?>
+                </div>
+
+                <div style="border:1px solid #ffe0b2; background:#fff3e0; padding:20px; border-radius:12px;">
+                    <h3>4. Senų prekių valymas (Ghost Items)</h3>
+                    <p>Rodo prekes, kurios nebuvo atnaujintos ilgiau nei 48 val.</p>
+
+                    <form method="post">
+                        <input type="hidden" name="csrf_token" value="<?php echo csrf_token(); ?>">
+                        <input type="hidden" name="action" value="products_control">
+                        <input type="hidden" name="sub_action" value="check_stale">
+                        <button type="submit" style="background:#f57c00; border:none; color:white; padding:8px 16px; border-radius:6px; font-size:0.9rem; cursor:pointer;">Ieškoti senų prekių</button>
+                    </form>
+
+                    <?php if (!empty($staleResult)): ?>
+                        <div style="margin-top:20px; background:#fff; padding:15px; border-radius:8px; border:1px solid #ffe0b2;">
+                            <h4 style="margin-top:0;">Rasta senų prekių (pirmos 50):</h4>
+                            <div style="max-height:200px; overflow-y:auto; border:1px solid #eee; margin-bottom:15px;">
+                                <table class="table" style="font-size:0.85rem;">
+                                    <thead><tr><th>ID</th><th>Pavadinimas</th><th>Paskutinį kartą matyta</th></tr></thead>
+                                    <tbody>
+                                        <?php foreach ($staleResult as $stale): ?>
+                                            <tr>
+                                                <td><?php echo e($stale['id']); ?></td>
+                                                <td><?php echo e($stale['title']); ?></td>
+                                                <td style="color:#c00;"><?php echo e($stale['scraped_at']); ?></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <form method="post" onsubmit="return confirm('Ar tikrai norite ištrinti VISAS senas prekes (>48h)?');">
+                                <input type="hidden" name="csrf_token" value="<?php echo csrf_token(); ?>">
+                                <input type="hidden" name="action" value="products_control">
+                                <input type="hidden" name="sub_action" value="remove_stale">
+                                <button type="submit" style="background:#e65100; border:none; color:white; padding:10px 20px; border-radius:6px; font-weight:bold; cursor:pointer;">Ištrinti senas prekes</button>
+                            </form>
+                        </div>
+                    <?php endif; ?>
+                </div>
+
+                <div style="border:1px solid #dcedc8; background:#f1f8e9; padding:20px; border-radius:12px;">
+                    <h3>5. Galiojimo laiko tikrinimas</h3>
+                    <p>Patikrina, ar Pirkis.lt prekės galiojimo laikas jau pasibaigęs, ir jas ištrina.</p>
+                    
+                    <a href="expiry_checker.php" target="_blank" class="cta" style="background:#689f38; color:#fff; text-decoration:none; display:inline-block; padding:10px 20px; border-radius:6px; font-weight:bold; font-size:0.95rem;">
+                        Atidaryti Galiojimo Tikrintoją &nearr;
+                    </a>
+                </div>
+
                 <div style="border:1px solid #fcc; background:#fff5f5; padding:20px; border-radius:12px;">
-                    <h3 style="color:#c00;">3. Pavojinga zona</h3>
+                    <h3 style="color:#c00;">6. Pavojinga zona</h3>
                     <p>Visiškai ištrina prekes iš duomenų bazės.</p>
                     <form method="post" onsubmit="return confirm('DĖMESIO! Ar tikrai norite IŠTRINTI VISAS PREKES? Šio veiksmo negalima atšaukti.');">
                          <input type="hidden" name="csrf_token" value="<?php echo csrf_token(); ?>">
