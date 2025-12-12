@@ -28,7 +28,7 @@ if ($selectedCountry === 'nepriskirta') {
     $params[':country'] = $selectedCountry;
 }
 
-// 3. Paieška (NAUJA)
+// 3. Paieška
 $search = trim($_GET['search'] ?? '');
 if ($search) {
     // Ieškome pavadinime arba išoriniame ID
@@ -80,7 +80,7 @@ render_nav();
 <div class="section" style="padding-bottom: 0;">
     <div class="partners-header">
         <h2>Kolekcijos parduotuvė</h2>
-        </div>
+    </div>
 
     <div class="shop-notice-wrapper" style="max-width: 1000px; margin: 0 auto 40px auto;">
         <div class="shop-info-card">
@@ -162,12 +162,19 @@ render_nav();
         <div class="products-grid">
             <?php foreach ($products as $item): ?>
                 <?php
-                // --- PAVADINIMŲ VALYMAS ---
+                // --- PATAISYTAS PAVADINIMŲ VALYMAS ---
                 $displayTitle = $item['title'];
-                // Keičiame 2 ar daugiau taškų į tarpą (pvz. "Pavadinimas......" -> "Pavadinimas ")
-                $displayTitle = preg_replace('/\.{2,}/', ' ', $displayTitle);
-                // Keičiame 2 ar daugiau apatinių brūkšnių į tarpą (pvz. "Pavadinimas___" -> "Pavadinimas ")
-                $displayTitle = preg_replace('/_{2,}/', ' ', $displayTitle);
+
+                // 1. Keičiame "_" sekas (net jei tarp jų yra tarpai) į tarpą
+                // Pvz.: "_ _ _" arba "_" arba "______" -> " "
+                $displayTitle = preg_replace('/(?:_\s*)+/', ' ', $displayTitle);
+
+                // 2. Keičiame 2 ar daugiau taškų sekas (net jei su tarpais) į tarpą
+                // Pvz.: ". . . ." -> " ", bet "2013." lieka nepaliestas
+                $displayTitle = preg_replace('/(?:\.\s*){2,}/', ' ', $displayTitle);
+
+                // 3. Išvalome dvigubus tarpus ir "nukerpame" galus
+                $displayTitle = preg_replace('/\s+/', ' ', $displayTitle);
                 $displayTitle = trim($displayTitle);
                 ?>
 
