@@ -149,6 +149,7 @@ function detect_country(string $title): ?string {
         'islandija' => 'Islandija', 'iceland' => 'Islandija',
         'gruzija' => 'Gruzija', 'georgia' => 'Gruzija', 'sakartvelas' => 'Gruzija',
         'monakas' => 'Monakas', 'monaco' => 'Monakas',
+        'liuksemburgas' => 'Liuksemburgas', 'luxembourg' => 'Liuksemburgas',
 
         // --- ŠIAURĖS IR PIETŲ AMERIKA IR KARIBAI ---
         'jav' => 'JAV', 'usa' => 'JAV', 'america' => 'JAV', 'united states' => 'JAV',
@@ -296,6 +297,8 @@ function detect_country(string $title): ?string {
         'velykų sala' => 'Velykų Sala', 'easter island' => 'Velykų Sala',
         'niujė' => 'Niujė', 'niue' => 'Niujė',
         'tristanas da kunja' => 'Tristanas da Kunja', 'tristan da cunha' => 'Tristanas da Kunja',
+        'samoa' => 'Samoa',
+        'kuko salos' => 'Kuko Salos', 'cook islands' => 'Kuko Salos', 'cook' => 'Kuko Salos',
     ];
 
     foreach ($map as $search => $standard) {
