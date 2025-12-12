@@ -2,11 +2,10 @@
 require_once __DIR__ . '/partials.php';
 require_admin();
 
-// 1. Apsauga: Tikriname CSRF visoms POST užklausoms šiame faile
+// 1. Apsauga: Tikriname CSRF visoms POST užklausoms
 require_csrf();
 
-// --- LOGIKA (POST užklausų apdorojimas) ---
-// Paliekame tą pačią logiką viršuje, kad ji suveiktų prieš atvaizdavimą
+// --- KINTAMIEJI IR FUNKCIJOS ---
 
 $alert = ['type' => '', 'message' => ''];
 $uploadDir = __DIR__ . '/uploads';
@@ -15,7 +14,6 @@ if (!is_dir($uploadDir)) {
     mkdir($uploadDir, 0775, true);
 }
 
-// Funkcijos paveikslėliams ir žinutėms
 function set_alert(string $type, string $message): void
 {
     global $alert;
@@ -74,16 +72,81 @@ function upload_hero_media(array $file, string $type, string $uploadDir): array
     return [true, $publicPath];
 }
 
-// 1. DIZAINAS (HERO) - Išsaugojimas
+// --- LOGIKA (POST UŽKLAUSOS) ---
+
+// 1. PRODUKTŲ VALDYMAS
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'products_control') {
+    $subAction = $_POST['sub_action'] ?? '';
+
+    if ($subAction === 'delete_all') {
+        // 1. Ištriname visus produktus
+        $pdo->exec("TRUNCATE TABLE products");
+        
+        // 2. Nuresetiname Cron būseną į pradžią (0)
+        $stateFile = __DIR__ . '/scraper_state.json';
+        // 'status' => 'running' priverčia croną veikti iškart (nelaukiant cooldown)
+        $newState = ['start' => 0, 'status' => 'running', 'last_run' => 0, 'history' => []];
+        file_put_contents($stateFile, json_encode($newState));
+
+        set_alert('success', 'Visos prekės ištrintos. Scraperis nustatytas į 0 ir pradės darbą automatiškai (su sekančiu Cron ciklu).');
+        
+    } elseif ($subAction === 'reset_countries') {
+        $pdo->exec("UPDATE products SET country = NULL, category = NULL");
+        set_alert('success', 'Visų prekių šalių ir kategorijų priskyrimai panaikinti.');
+        
+    } elseif ($subAction === 'detect_countries') {
+        // Atnaujiname ir šalis, ir kategorijas
+        $stmt = $pdo->query("SELECT id, title, url FROM products");
+        $count = 0;
+        
+        while ($row = $stmt->fetch()) {
+            $country = function_exists('detect_country') ? detect_country($row['title']) : null;
+            $category = function_exists('detect_category') ? detect_category($row['url']) : null;
+            
+            if ($country || $category) {
+                $sql = "UPDATE products SET ";
+                $params = [];
+                
+                if ($country) {
+                    $sql .= "country = ?, ";
+                    $params[] = $country;
+                }
+                if ($category) {
+                    $sql .= "category = ?, ";
+                    $params[] = $category;
+                }
+                
+                $sql = rtrim($sql, ", ");
+                $sql .= " WHERE id = ?";
+                $params[] = $row['id'];
+                
+                $pdo->prepare($sql)->execute($params);
+                $count++;
+            }
+        }
+        set_alert('success', "Informacija atnaujinta $count prekėms (Šalys ir Kategorijos).");
+        
+    } elseif ($subAction === 'reset_cron') {
+        // TIK NURESETINTI CRON (BE IŠTRYNIMO)
+        $stateFile = __DIR__ . '/scraper_state.json';
+        $newState = ['start' => 0, 'status' => 'running', 'last_run' => 0, 'history' => []];
+        // Jei failas jau yra, stengiamės išsaugoti istoriją, bet nuresetinti startą
+        if (file_exists($stateFile)) {
+            $old = json_decode(file_get_contents($stateFile), true);
+            if ($old && isset($old['history'])) $newState['history'] = $old['history'];
+        }
+        file_put_contents($stateFile, json_encode($newState));
+        set_alert('success', 'Cron skaitiklis sėkmingai nustatytas į 0.');
+    }
+}
+
+// 2. DIZAINAS (HERO)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'hero') {
-    // Gauname esamą informaciją, kad neprarastume media_value jei nieko nekeičiam
     $hStmt = $pdo->query('SELECT media_value FROM hero_content WHERE id = 1');
     $curr = $hStmt->fetch();
-    
     $mediaValue = $curr['media_value'] ?? '';
     $mediaType = $_POST['media_type'] ?? 'image';
 
-    // Failų kėlimo logika
     if ($mediaType === 'image') {
         if (!empty($_FILES['hero_image']['name'])) {
             [$ok, $res] = upload_hero_media($_FILES['hero_image'], 'image', $uploadDir);
@@ -113,7 +176,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'hero'
     if (!$alert['message']) set_alert('success', 'Dizaino nustatymai atnaujinti.');
 }
 
-// 2. NAUJIENOS - Išsaugojimas
+// 3. NAUJIENOS
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'news') {
     $title = trim($_POST['news_title']);
     $body = trim($_POST['news_body']);
@@ -138,7 +201,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'news'
     }
 }
 
-// Papildomi naujienų veiksmai (nuotraukos, trinimas)
+// 4. PAPILDOMI NAUJIENŲ VEIKSMAI
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $act = $_POST['action'] ?? '';
     if ($act === 'news_image_add') {
@@ -169,7 +232,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// 3. VARTOTOJAI - Rolės
+// 5. VARTOTOJŲ ROLĖS
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'role') {
     $role = $_POST['role'] === 'admin' ? 'admin' : 'user';
     $pdo->prepare('UPDATE users SET role = ? WHERE id = ?')->execute([$role, $_POST['user_id']]);
@@ -179,11 +242,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'role'
 
 // --- DUOMENŲ GAVIMAS ---
 
-// Nustatome aktyvų tab'ą
 $activeTab = $_GET['tab'] ?? 'design';
 
-// Gauname duomenis tik tam tab'ui, kurio reikia (arba visus, jei paprasčiau)
-// Hero duomenys
+// Hero
 $heroStmt = $pdo->query('SELECT * FROM hero_content WHERE id = 1');
 $hero = $heroStmt->fetch() ?: [
     'title' => '', 'message' => '', 'button_text' => '', 'button_url' => '', 
@@ -191,15 +252,31 @@ $hero = $heroStmt->fetch() ?: [
 ];
 $heroColorValue = (preg_match('/^#[0-9a-fA-F]{6}$/', $hero['media_value'] ?? '')) ? $hero['media_value'] : '#000000';
 
-// Naujienų duomenys
+// Naujienos
 $newsList = $pdo->query('SELECT * FROM news ORDER BY created_at DESC')->fetchAll();
 $imagesRaw = $pdo->query('SELECT * FROM news_images ORDER BY is_primary DESC, created_at DESC')->fetchAll();
 $imagesByNews = [];
 foreach ($imagesRaw as $img) $imagesByNews[$img['news_id']][] = $img;
 
-// Vartotojų duomenys
+// Vartotojai
 $usersList = $pdo->query('SELECT * FROM users ORDER BY name ASC')->fetchAll();
 
+// Produktų statistika (tik jei aktyvus tabas)
+$productStats = [];
+$scraperState = ['start' => 0, 'status' => 'Nežinoma', 'last_run' => 0, 'history' => []];
+
+if ($activeTab === 'products') {
+    $productStats['total'] = $pdo->query("SELECT COUNT(*) FROM products")->fetchColumn();
+    $productStats['with_country'] = $pdo->query("SELECT COUNT(*) FROM products WHERE country IS NOT NULL AND country != ''")->fetchColumn();
+    $productStats['with_category'] = $pdo->query("SELECT COUNT(*) FROM products WHERE category IS NOT NULL AND category != ''")->fetchColumn();
+    $productStats['without_country'] = $productStats['total'] - $productStats['with_country'];
+    
+    // Nuskaitome scraperio būseną
+    if (file_exists(__DIR__ . '/scraper_state.json')) {
+        $json = json_decode(file_get_contents(__DIR__ . '/scraper_state.json'), true);
+        if ($json) $scraperState = array_merge($scraperState, $json);
+    }
+}
 
 render_head('Administratoriaus pultas');
 render_nav();
@@ -219,6 +296,7 @@ render_nav();
         <div class="admin-menu">
             <a href="?tab=design" class="<?php echo $activeTab === 'design' ? 'active' : ''; ?>">Dizainas</a>
             <a href="?tab=news" class="<?php echo $activeTab === 'news' ? 'active' : ''; ?>">Naujienos</a>
+            <a href="?tab=products" class="<?php echo $activeTab === 'products' ? 'active' : ''; ?>">Produktai</a>
             <a href="?tab=users" class="<?php echo $activeTab === 'users' ? 'active' : ''; ?>">Vartotojai</a>
         </div>
 
@@ -242,48 +320,30 @@ render_nav();
                         </select>
                     </div>
                 </div>
-
                 <label for="message">Aprašymas</label>
                 <textarea id="message" name="message" rows="3" required><?php echo e($hero['message']); ?></textarea>
-
                 <div class="two-up">
-                    <div>
-                        <label for="button_text">Mygtuko tekstas</label>
-                        <input id="button_text" name="button_text" value="<?php echo e($hero['button_text']); ?>">
-                    </div>
-                    <div>
-                        <label for="button_url">Mygtuko nuoroda</label>
-                        <input id="button_url" name="button_url" value="<?php echo e($hero['button_url']); ?>">
-                    </div>
+                    <div><label for="button_text">Mygtuko tekstas</label><input id="button_text" name="button_text" value="<?php echo e($hero['button_text']); ?>"></div>
+                    <div><label for="button_url">Mygtuko nuoroda</label><input id="button_url" name="button_url" value="<?php echo e($hero['button_url']); ?>"></div>
                 </div>
-
                 <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
                 <h3>Fonas</h3>
-                
                 <label for="media_type">Fono tipas</label>
                 <select id="media_type" name="media_type" onchange="document.querySelectorAll('.media-input').forEach(e => e.style.display='none'); document.getElementById('media-'+this.value).style.display='block';">
                     <option value="image" <?php echo $hero['media_type'] === 'image' ? 'selected' : ''; ?>>Nuotrauka</option>
                     <option value="video" <?php echo $hero['media_type'] === 'video' ? 'selected' : ''; ?>>Video</option>
                     <option value="color" <?php echo $hero['media_type'] === 'color' ? 'selected' : ''; ?>>Spalva</option>
                 </select>
-
                 <div id="media-image" class="media-input" style="display: <?php echo $hero['media_type'] === 'image' ? 'block' : 'none'; ?>;">
-                    <label>Įkelti nuotrauką</label>
-                    <input type="file" name="hero_image" accept="image/*">
-                    <label style="margin-top:10px;">Arba nuoroda (URL)</label>
-                    <input name="image_url" value="<?php echo e($hero['image_url']); ?>" placeholder="https://...">
+                    <label>Įkelti nuotrauką</label><input type="file" name="hero_image" accept="image/*">
+                    <label style="margin-top:10px;">Arba nuoroda (URL)</label><input name="image_url" value="<?php echo e($hero['image_url']); ?>" placeholder="https://...">
                 </div>
-
                 <div id="media-video" class="media-input" style="display: <?php echo $hero['media_type'] === 'video' ? 'block' : 'none'; ?>;">
-                    <label>Įkelti video (mp4, webm)</label>
-                    <input type="file" name="hero_video" accept="video/mp4,video/webm,video/ogg">
+                    <label>Įkelti video (mp4, webm)</label><input type="file" name="hero_video" accept="video/mp4,video/webm,video/ogg">
                 </div>
-
                 <div id="media-color" class="media-input" style="display: <?php echo $hero['media_type'] === 'color' ? 'block' : 'none'; ?>;">
-                    <label>Pasirinkti spalvą</label>
-                    <input type="color" name="media_color" value="<?php echo e($heroColorValue); ?>" style="height: 50px; cursor:pointer;">
+                    <label>Pasirinkti spalvą</label><input type="color" name="media_color" value="<?php echo e($heroColorValue); ?>" style="height: 50px; cursor:pointer;">
                 </div>
-
                 <button type="submit" style="margin-top:20px;">Išsaugoti pakeitimus</button>
             </form>
         <?php endif; ?>
@@ -389,9 +449,128 @@ render_nav();
         <?php endif; ?>
 
 
+        <?php if ($activeTab === 'products'): ?>
+            <h2>Produktų valdymas</h2>
+            
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:20px; margin-bottom:30px;">
+                <div style="background:#f4f4f4; padding:15px; border-radius:8px; text-align:center;">
+                    <h3><?php echo $productStats['total']; ?></h3>
+                    <p style="margin:0; color:#666;">Viso prekių</p>
+                </div>
+                <div style="background:#e8f6ef; padding:15px; border-radius:8px; text-align:center;">
+                    <h3><?php echo $productStats['with_country']; ?></h3>
+                    <p style="margin:0; color:#156a45;">Su priskirta šalimi</p>
+                </div>
+                <div style="background:#e0f7fa; padding:15px; border-radius:8px; text-align:center;">
+                    <h3><?php echo $productStats['with_category']; ?></h3>
+                    <p style="margin:0; color:#006064;">Su priskirta kategorija</p>
+                </div>
+            </div>
+
+            <div style="display:grid; gap:20px; grid-template-columns: 1fr;">
+                
+                <div style="border:1px solid #ddd; padding:20px; border-radius:12px;">
+                    <h3>1. Automatinis nuskaitymas (Cron)</h3>
+                    
+                    <div style="background:#f9f9f9; padding:15px; border-radius:8px; margin-bottom:20px; border:1px solid #eee;">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+                            <span><strong>Būsena:</strong> 
+                                <?php if (($scraperState['status'] ?? '') === 'running'): ?>
+                                    <span style="color:#2ecc71;">● Vyksta</span>
+                                <?php elseif (($scraperState['status'] ?? '') === 'finished'): ?>
+                                    <span style="color:#f39c12;">● Ilsisi (Baigta)</span>
+                                <?php else: ?>
+                                    <span style="color:#95a5a6;">● Nežinoma</span>
+                                <?php endif; ?>
+                            </span>
+                            <span><strong>Progresas:</strong> <?php echo $scraperState['start'] ?? 0; ?> prekė</span>
+                        </div>
+                        <p style="margin:0; font-size:0.85rem; color:#666;">
+                            Paskutinis aktyvumas: <?php echo isset($scraperState['last_run']) ? date('Y-m-d H:i:s', $scraperState['last_run']) : '-'; ?>
+                        </p>
+                    </div>
+
+                    <?php if (!empty($scraperState['history'])): ?>
+                        <div style="margin-bottom:20px;">
+                            <h4 style="margin:0 0 10px 0; font-size:0.95rem; color:#555;">Paskutiniai 5 ciklų išvalymai:</h4>
+                            <table style="width:100%; font-size:0.85rem; border-collapse:collapse;">
+                                <thead style="background:#f4f4f4;">
+                                    <tr>
+                                        <th style="padding:6px; text-align:left; border-bottom:1px solid #ddd;">Data</th>
+                                        <th style="padding:6px; text-align:right; border-bottom:1px solid #ddd;">Ištrinta prekių</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($scraperState['history'] as $log): ?>
+                                        <tr>
+                                            <td style="padding:6px; border-bottom:1px solid #eee; color:#333;">
+                                                <?php echo date('Y-m-d H:i', $log['time']); ?>
+                                            </td>
+                                            <td style="padding:6px; text-align:right; border-bottom:1px solid #eee;">
+                                                <?php if ($log['count'] > 0): ?>
+                                                    <span style="color:#c00; font-weight:bold;">-<?php echo $log['count']; ?></span>
+                                                <?php else: ?>
+                                                    <span style="color:#ccc;">0</span>
+                                                <?php endif; ?>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php endif; ?>
+
+                    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                        <a href="scraper.php" target="_blank" class="cta" style="background:#000; color:#fff; text-decoration:none; display:inline-block; padding:8px 16px; border-radius:6px; font-size:0.9rem;">
+                            Atidaryti Scraper (Testui) &nearr;
+                        </a>
+
+                        <form method="post" onsubmit="return confirm('Ar tikrai norite nustatyti skaitiklį į 0?');">
+                             <input type="hidden" name="csrf_token" value="<?php echo csrf_token(); ?>">
+                             <input type="hidden" name="action" value="products_control">
+                             <input type="hidden" name="sub_action" value="reset_cron">
+                             <button type="submit" style="background:#ff9800; border:none; color:white; padding:8px 16px; border-radius:6px; font-size:0.9rem; cursor:pointer;">
+                                 Nustatyti Cron į 0 (Reset)
+                             </button>
+                        </form>
+                    </div>
+                </div>
+
+                <div style="border:1px solid #ddd; padding:20px; border-radius:12px;">
+                    <h3>2. Duomenų atnaujinimas</h3>
+                    <p>Jei pakeitėte šalių sąrašą, spauskite čia, kad perrašytumėte informaciją esamoms prekėms.</p>
+                    <form method="post" style="display:inline;">
+                         <input type="hidden" name="csrf_token" value="<?php echo csrf_token(); ?>">
+                         <input type="hidden" name="action" value="products_control">
+                         <input type="hidden" name="sub_action" value="detect_countries">
+                         <button type="submit" style="background:#4CAF50; border:none; color:white; padding:8px 16px; border-radius:6px; font-size:0.9rem; cursor:pointer;">Atnaujinti šalis ir kategorijas</button>
+                    </form>
+                    
+                    <form method="post" style="display:inline; margin-left:10px;" onsubmit="return confirm('Ar tikrai norite panaikinti VISŲ prekių šalis ir kategorijas?');">
+                         <input type="hidden" name="csrf_token" value="<?php echo csrf_token(); ?>">
+                         <input type="hidden" name="action" value="products_control">
+                         <input type="hidden" name="sub_action" value="reset_countries">
+                         <button type="submit" style="background:#ddd; color:#333; border:none; padding:8px 16px; border-radius:6px; font-size:0.9rem; cursor:pointer;">Išvalyti priskyrimus</button>
+                    </form>
+                </div>
+
+                <div style="border:1px solid #fcc; background:#fff5f5; padding:20px; border-radius:12px;">
+                    <h3 style="color:#c00;">3. Pavojinga zona</h3>
+                    <p>Visiškai ištrina prekes iš duomenų bazės.</p>
+                    <form method="post" onsubmit="return confirm('DĖMESIO! Ar tikrai norite IŠTRINTI VISAS PREKES? Šio veiksmo negalima atšaukti.');">
+                         <input type="hidden" name="csrf_token" value="<?php echo csrf_token(); ?>">
+                         <input type="hidden" name="action" value="products_control">
+                         <input type="hidden" name="sub_action" value="delete_all">
+                         <button type="submit" style="background:#c00; border:none; color:white; padding:8px 16px; border-radius:6px; font-size:0.9rem; cursor:pointer;">Ištrinti VISAS prekes</button>
+                    </form>
+                </div>
+
+            </div>
+        <?php endif; ?>
+
+
         <?php if ($activeTab === 'users'): ?>
             <h2>Vartotojų valdymas</h2>
-            <p style="color:#666;">Čia galite suteikti arba atimti administratoriaus teises.</p>
             <table class="table">
                 <thead><tr><th>Vardas</th><th>El. paštas</th><th>Rolė</th><th>Veiksmas</th></tr></thead>
                 <tbody>

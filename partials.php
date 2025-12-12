@@ -23,6 +23,7 @@ function render_nav(): void
         <nav class="menu">
             <a href="index.php">Pagrindinis</a>
             <a href="news.php">Naujienos</a>
+			<a href="shop.php">Parduotuvė</a>
             
             <?php if ($user): ?>
                 <div class="dropdown">
