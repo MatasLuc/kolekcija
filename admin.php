@@ -283,7 +283,7 @@ $usersList = $pdo->query('SELECT * FROM users ORDER BY name ASC')->fetchAll();
 $productStats = [];
 $scraperState = ['start' => 0, 'status' => 'Nežinoma', 'last_run' => 0, 'history' => [], 'cooldown_enabled' => 0];
 $otherJobsData = []; 
-$expiringProducts = []; // NAUJA: Greičiausiai besibaigiančios prekės
+$expiringProducts = []; 
 
 if ($activeTab === 'products') {
     $productStats['total'] = $pdo->query("SELECT COUNT(*) FROM products")->fetchColumn();
@@ -316,7 +316,7 @@ if ($activeTab === 'products') {
     }
 
     // NAUJA: Top 5 greičiausiai besibaigiančios
-    // Tik tos, kurios turi datą ir ji dar ateityje
+    // PATAISYMAS: Rodome tik tas, kurių data yra ATEITYJE (> NOW()), surūšiuotas nuo artimiausios
     $expSql = "SELECT title, expires_at, url FROM products 
                WHERE expires_at IS NOT NULL AND expires_at > NOW() 
                ORDER BY expires_at ASC LIMIT 5";
