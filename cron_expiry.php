@@ -1,13 +1,14 @@
 <?php
-// cron_expiry.php - Automatinis galiojimo tikrinimas (Cron Job)
+// cron_expiry.php - Automatinis galiojimo tikrinimas (Cron Job) su Istorija
 // Nustatyti cron-job.org vykdyti kas 15-30 minučių.
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/functions.php'; // Reikalinga log_cron_history funkcijai
 
 // --- KONFIGŪRACIJA ---
 $secretKey = 'ManoSlaptasRaktas123'; // Turi sutapti su jūsų raktu
-$itemsPerRun = 50; // Kiek prekių tikrinti per vieną kartą (kad neviršytų laiko limito)
-$logFile = __DIR__ . '/expiry.log';
+$itemsPerRun = 50; // Kiek prekių tikrinti per vieną kartą
+$logFile = __DIR__ . '/expiry.log'; // Papildomas failinis logas (jei reikia)
 
 // --- APSAUGA ---
 $key = $_GET['key'] ?? '';
@@ -58,11 +59,14 @@ try {
     $items = $stmt->fetchAll();
 
     if (!$items) {
-        die("Prekių nerasta arba duomenų bazė tuščia.");
+        $msg = "Prekių nerasta arba DB tuščia.";
+        log_cron_history(2, $msg, 0); // ID 2 = Expiry
+        die($msg);
     }
 
     $deleted = 0;
     $checked = 0;
+    $updated = 0;
 
     foreach ($items as $item) {
         $html = fetch_html_cron($item['url']);
@@ -99,23 +103,29 @@ try {
         } else {
             // Atnaujiname laiką, kad prekė nukeliautų į eilės galą
             $pdo->prepare("UPDATE products SET scraped_at = NOW() WHERE id = ?")->execute([$item['id']]);
+            $updated++;
         }
         
-        // Maža pauzė serverio apkrovai mažinti
+        // Maža pauzė
         usleep(200000); 
     }
 
-    // Rezultatų išvedimas (tai matysite Cron Job istorijoje)
-    $msg = "Patikrinta: $checked. Ištrinta: $deleted.";
+    // Rezultatų įrašymas į DB istoriją (ID 2)
+    $msg = "Patikrinta: $checked. Ištrinta: $deleted. Atnaujinta: $updated.";
+    log_cron_history(2, $msg, $deleted);
+    
+    // Išvedimas ekranui (Cron logams)
     echo $msg;
 
-    // Loguojame į failą tik jei kažką ištrynėme
+    // Failinis logas (atsarginis)
     if ($deleted > 0) {
         $logEntry = "[" . date('Y-m-d H:i:s') . "] $msg\n";
         file_put_contents($logFile, $logEntry, FILE_APPEND);
     }
 
 } catch (Exception $e) {
-    echo "KLAIDA: " . $e->getMessage();
+    $msg = "KLAIDA: " . $e->getMessage();
+    log_cron_history(2, $msg, 0);
+    echo $msg;
 }
 ?>
