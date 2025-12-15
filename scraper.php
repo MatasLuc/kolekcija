@@ -150,7 +150,7 @@ $start = ($mode === 'browser' && $startParam !== null) ? $startParam : $state['s
 
 // CRON Logika
 if ($mode === 'cron') {
-    $cooldownTime = ($state['cooldown_enabled'] ?? 0) ? 3600 : 0;
+    $cooldownTime = ($state['cooldown_enabled'] ?? 0) ? 600 : 0;
 
     if ($state['status'] === 'finished') {
         if ((time() - $state['last_run']) < $cooldownTime) {
