@@ -1,6 +1,5 @@
 <?php
-// db.php - Prisijungimas ir DB struktūra (Su Cooldown, History ir Expiry palaikymu)
-
+// db.php - Prisijungimas ir DB struktūra
 // Nustatome Lietuvos laiką
 date_default_timezone_set('Europe/Vilnius');
 
@@ -50,6 +49,7 @@ try {
 // 3. Struktūros užtikrinimas
 function ensure_schema(PDO $pdo): void
 {
+    // Esamos lentelės
     $statements = [
         "CREATE TABLE IF NOT EXISTS users (
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -90,7 +90,6 @@ function ensure_schema(PDO $pdo): void
             CONSTRAINT fk_news_images_news FOREIGN KEY (news_id) REFERENCES news(id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
         
-        // Scraper būsenos lentelė
         "CREATE TABLE IF NOT EXISTS scraper_state (
             id INT PRIMARY KEY DEFAULT 1,
             start_pos INT DEFAULT 0,
@@ -102,12 +101,10 @@ function ensure_schema(PDO $pdo): void
             cooldown_enabled TINYINT DEFAULT 0
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
         
-        // ID 1 = Scraperis
         "INSERT INTO scraper_state (id, start_pos, status, last_run, cycle_id, total_processed, history, cooldown_enabled)
          VALUES (1, 0, 'finished', 0, '', 0, '[]', 0)
          ON DUPLICATE KEY UPDATE id=1;",
 
-        // ID 2 = Expiry Checker (Galiojimas), ID 3 = Duplicates Cleaner (Dublikatai)
         "INSERT INTO scraper_state (id, start_pos, status, last_run, cycle_id, total_processed, history, cooldown_enabled)
          VALUES 
          (2, 0, 'idle', 0, 'EXPIRY', 0, '[]', 0),
@@ -122,19 +119,14 @@ function ensure_schema(PDO $pdo): void
     foreach ($statements as $sql) {
         try {
             $pdo->exec($sql);
-        } catch (PDOException $e) {
-            // Ignoruojame klaidas, jei lentelės jau yra
-        }
+        } catch (PDOException $e) { }
     }
     
-    // ATNAUJINIMAI (Migration logic)
-    
-    // 1. Cooldown stulpelis
+    // Migracijos
     try {
         $pdo->exec("ALTER TABLE scraper_state ADD COLUMN cooldown_enabled TINYINT DEFAULT 0");
     } catch (PDOException $e) { }
 
-    // 2. Expires_at stulpelis produktams (SVARBU: Nauja dalis)
     try {
         $pdo->exec("ALTER TABLE products ADD COLUMN expires_at TIMESTAMP NULL DEFAULT NULL");
         $pdo->exec("CREATE INDEX idx_expires_at ON products(expires_at)");
