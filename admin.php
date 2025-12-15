@@ -519,7 +519,7 @@ render_nav();
                                     else echo '<span style="color:#95a5a6;">● ' . e($scraperState['status']) . '</span>';
                                     ?>
                                 </p>
-                                <p style="margin:0;"><strong>Poilsio režimas (1 val.):</strong> 
+                                <p style="margin:0;"><strong>Poilsio režimas (10 min):</strong> 
                                     <?php echo $scraperState['cooldown_enabled'] ? '<span style="color:#c00;">ĮJUNGTAS</span>' : '<span style="color:green;">IŠJUNGTAS (Sukasi nuolat)</span>'; ?>
                                 </p>
                             </div>
