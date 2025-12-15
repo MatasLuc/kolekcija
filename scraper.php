@@ -1,9 +1,9 @@
 <?php
-// scraper.php - V24 (Browser Fix: Deletion & State Persistence)
+// scraper.php - V25 (Database State Version)
 set_time_limit(0);
 ignore_user_abort(true);
 
-// 1. GLOBALUS PROCESO UŽRAKTAS
+// 1. GLOBALUS PROCESO UŽRAKTAS (Failų sistemos lygmenyje, kad keli PHP procesai nesipjautų)
 $lockFile = __DIR__ . '/scraper.lock';
 $fpLock = fopen($lockFile, 'w+');
 if (!flock($fpLock, LOCK_EX | LOCK_NB)) {
@@ -20,19 +20,16 @@ $perPage = 20;
 $maxLimit = 3000;
 $cronTimeLimit = 25;    
 $cooldownTime = 3600;   
-$stateFile = __DIR__ . '/scraper_state.json';
-$minItemsToAllowDelete = 100; // Saugiklis: jei rasime mažiau nei tiek, netrinsime nieko
+$minItemsToAllowDelete = 100;
 
 $mode = isset($_GET['mode']) ? $_GET['mode'] : 'browser'; 
 $startParam = isset($_GET['start']) ? (int)$_GET['start'] : null;
 $secret = 'ManoSlaptasRaktas123'; 
 
-// USER-AGENT SĄRAŠAS (Rotacijai)
 $userAgents = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0',
-    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Mobile/15E148 Safari/604.1'
 ];
 
 // --- PAGALBINĖS FUNKCIJOS ---
@@ -58,32 +55,61 @@ function fetchUrl($url, $retries = 3) {
         }
         $attempt++;
         if ($attempt <= $retries) {
-            $sleepTime = pow(2, $attempt);
-            if (isset($_GET['mode']) && $_GET['mode'] === 'browser') {
-                // Tyli pauzė naršyklėje
-            }
-            sleep($sleepTime);
+            sleep(pow(2, $attempt));
         }
     }
     return false;
 }
 
-function saveState($file, $state) {
-    $tempFile = $file . '.tmp';
-    $json = json_encode($state, JSON_PRETTY_PRINT);
-    if (file_put_contents($tempFile, $json, LOCK_EX) === false) return false;
-    return rename($tempFile, $file);
+// NAUJOS FUNKCIJOS darbui su DB būsena
+function get_db_state(PDO $pdo): array {
+    $stmt = $pdo->query("SELECT * FROM scraper_state WHERE id = 1");
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    // Numatytieji nustatymai, jei lentelė tuščia (nors neturėtų būti)
+    if (!$row) {
+        return ['start' => 0, 'status' => 'finished', 'last_run' => 0, 'cycle_id' => '', 'total_processed' => 0, 'history' => []];
+    }
+    
+    return [
+        'start' => (int)$row['start_pos'],
+        'status' => $row['status'],
+        'last_run' => (int)$row['last_run'],
+        'cycle_id' => $row['cycle_id'],
+        'total_processed' => (int)$row['total_processed'],
+        'history' => json_decode($row['history'] ?? '[]', true) ?: []
+    ];
 }
 
-function stopAndSave($stateFile, $state, $currentStart, $reason) {
+function save_db_state(PDO $pdo, array $state): void {
+    $stmt = $pdo->prepare("UPDATE scraper_state SET 
+        start_pos = :start, 
+        status = :status, 
+        last_run = :last_run, 
+        cycle_id = :cycle_id, 
+        total_processed = :total_processed,
+        history = :history
+        WHERE id = 1");
+    
+    $stmt->execute([
+        ':start' => $state['start'],
+        ':status' => $state['status'],
+        ':last_run' => $state['last_run'],
+        ':cycle_id' => $state['cycle_id'],
+        ':total_processed' => $state['total_processed'],
+        ':history' => json_encode($state['history'])
+    ]);
+}
+
+function stopAndSave($pdo, $state, $currentStart, $reason) {
     $state['start'] = $currentStart;
+    $state['status'] = 'running'; // Užtikriname, kad liktų running
     $state['last_run'] = time();
-    $state['status'] = 'running';
-    saveState($stateFile, $state);
+    save_db_state($pdo, $state);
     die($reason);
 }
 
-function finish_cycle($state, $stateFile, $pdo, $minItemsToAllowDelete, $mode = 'cron') {
+function finish_cycle($state, $pdo, $minItemsToAllowDelete, $mode = 'cron') {
     $currentCycleId = $state['cycle_id'];
     $totalFound = isset($state['total_processed']) ? (int)$state['total_processed'] : 0;
     
@@ -93,7 +119,8 @@ function finish_cycle($state, $stateFile, $pdo, $minItemsToAllowDelete, $mode = 
         $state['status'] = 'finished';
         $state['last_run'] = time();
         $state['total_processed'] = 0;
-        saveState($stateFile, $state);
+        save_db_state($pdo, $state);
+        
         $msg = "SAUGIKLIS: Rasta tik $totalFound prekių. Trynimas ATŠAUKTAS.";
         if ($mode === 'browser') {
             die("<h2 style='color:red'>$msg</h2><a href='admin.php'>Grįžti į admin</a>");
@@ -120,7 +147,7 @@ function finish_cycle($state, $stateFile, $pdo, $minItemsToAllowDelete, $mode = 
     $state['history'] = $history;
     $state['total_processed'] = 0;
     
-    saveState($stateFile, $state);
+    save_db_state($pdo, $state);
 
     $msg = "CIKLAS BAIGTAS. Rasta: $totalFound. Išvalyta (ištrinta): $deleted.";
     if ($mode === 'browser') {
@@ -138,56 +165,53 @@ if ($mode === 'cron') {
     if (!isset($_GET['key']) || $_GET['key'] !== $secret) die('Klaida: Neteisingas saugos raktas.');
 }
 
-// Užkrauname būseną
-$state = ['start' => 0, 'status' => 'running', 'last_run' => 0, 'cycle_id' => uniqid('RUN_'), 'total_processed' => 0];
-if (file_exists($stateFile)) {
-    $content = file_get_contents($stateFile);
-    if ($content) {
-        $decoded = json_decode($content, true);
-        if (is_array($decoded)) $state = array_merge($state, $decoded);
-    }
-}
+// Užkrauname būseną iš DB
+$state = get_db_state($pdo);
 
-// Jei tai naršyklė ir start=0, pradedame visiškai NAUJĄ ciklą
+// Browser Mode RESET: Jei leidžiama per naršyklę su start=0, pradedame visiškai iš naujo
 if ($mode === 'browser' && $startParam === 0) {
     $state['start'] = 0;
     $state['status'] = 'running';
     $state['total_processed'] = 0;
-    $state['cycle_id'] = uniqid('RUN_'); // Sugeneruojame naują ID
-    saveState($stateFile, $state);
+    $state['cycle_id'] = uniqid('RUN_');
+    save_db_state($pdo, $state);
 }
 
 // Nustatome startinę poziciją
 $start = ($mode === 'browser' && $startParam !== null) ? $startParam : $state['start'];
 
-if ($mode === 'cron' && ($state['status'] ?? '') === 'finished') {
-    $secondsSinceFinish = time() - ($state['last_run'] ?? 0);
-    if ($secondsSinceFinish < $cooldownTime) {
-        die("Ilsisi (Liko " . round(($cooldownTime - $secondsSinceFinish)/60) . " min).");
-    } else {
-        // Cron pradeda naują ciklą
-        $state['start'] = 0;
-        $state['status'] = 'running';
-        $state['total_processed'] = 0;
-        $state['cycle_id'] = uniqid('RUN_');
-        saveState($stateFile, $state);
-        $start = 0;
+// CRON logikos ir "Cooldowm" valdymas
+if ($mode === 'cron') {
+    if (($state['status'] ?? '') === 'finished') {
+        $secondsSinceFinish = time() - ($state['last_run'] ?? 0);
+        
+        if ($secondsSinceFinish < $cooldownTime) {
+            die("Ilsisi (Liko " . round(($cooldownTime - $secondsSinceFinish)/60) . " min).");
+        } else {
+            // Praėjo laikas -> Pradedame naują ciklą
+            $state['start'] = 0;
+            $state['status'] = 'running';
+            $state['total_processed'] = 0;
+            $state['cycle_id'] = uniqid('RUN_');
+            save_db_state($pdo, $state);
+            $start = 0;
+        }
     }
 }
 
-// Jei ciklo ID tuščias, sugeneruojame
+// Saugiklis: Jei statusas 'running', bet nėra cycle_id
 if (empty($state['cycle_id'])) {
     $state['cycle_id'] = uniqid('RUN_');
-    saveState($stateFile, $state);
+    save_db_state($pdo, $state);
 }
 
 if ($mode === 'browser') {
     echo '<body style="font-family: monospace; background: #222; color: #0f0; padding: 20px; line-height: 1.5;">';
-    echo "<h2>DUOMENŲ NUSKAITYMAS (V24)</h2>";
+    echo "<h2>DUOMENŲ NUSKAITYMAS (DB Mode)</h2>";
     echo "<p>Ciklo ID: <strong>{$state['cycle_id']}</strong> | Rasta prekių: <strong>{$state['total_processed']}</strong></p><hr>";
 }
 
-// SQL
+// SQL Paruošimas
 $upsertStmt = $pdo->prepare("
     INSERT INTO products (external_id, title, price, image_url, url, country, category, cycle_id, source, scraped_at) 
     VALUES (:eid, :title, :price, :img, :url, :country, :category, :cid, 'pirkis', NOW())
@@ -207,14 +231,14 @@ $touchStmt = $pdo->prepare("
 
 $startTime = microtime(true);
 
-// CIKLAS
+// PAGRINDINIS CIKLAS
 do {
     // 1. Patikrinimai
     if ($start > $maxLimit) {
-        finish_cycle($state, $stateFile, $pdo, $minItemsToAllowDelete, $mode);
+        finish_cycle($state, $pdo, $minItemsToAllowDelete, $mode);
     }
     if ($mode === 'cron' && (microtime(true) - $startTime) >= $cronTimeLimit) {
-        stopAndSave($stateFile, $state, $start, "Laikas baigėsi ($start).");
+        stopAndSave($pdo, $state, $start, "Laikas baigėsi ($start).");
     }
 
     // 2. Siunčiame užklausą
@@ -223,7 +247,7 @@ do {
     
     $html = fetchUrl($listUrl);
     if (!$html) {
-        if ($mode === 'cron') stopAndSave($stateFile, $state, $start, "Klaida: Nepavyko gauti HTML.");
+        if ($mode === 'cron') stopAndSave($pdo, $state, $start, "Klaida: Nepavyko gauti HTML.");
         die("Klaida: Nepavyko gauti turinio. Bandykite perkrauti.");
     }
 
@@ -239,12 +263,10 @@ do {
     // JEI PREKIŲ NERASTA (PABAIGA)
     if ($productNodes->length === 0) {
         if ($start == 0) {
-             // Jei pats pirmas puslapis tuščias - klaida
-             if ($mode === 'cron') stopAndSave($stateFile, $state, $start, "Klaida: 0 prekių pirmame puslapyje.");
+             if ($mode === 'cron') stopAndSave($pdo, $state, $start, "Klaida: 0 prekių pirmame puslapyje.");
              die("Klaida: Nerasta prekių. Galbūt pasikeitė svetainės struktūra?");
         }
-        // Normali pabaiga - vykdome trynimą
-        finish_cycle($state, $stateFile, $pdo, $minItemsToAllowDelete, $mode);
+        finish_cycle($state, $pdo, $minItemsToAllowDelete, $mode);
         break; 
     }
 
@@ -273,7 +295,7 @@ do {
         }
     }
 
-    // 5. Patikriname, ką jau turime DB (kad be reikalo nesiųstume nuotraukų užklausų)
+    // 5. Patikriname DB
     $existingMap = [];
     if (!empty($idsToFetch)) {
         $placeholders = implode(',', array_fill(0, count($idsToFetch), '?'));
@@ -285,7 +307,7 @@ do {
     // 6. Įrašome į DB
     foreach ($batchItems as $item) {
         if ($mode === 'cron' && (microtime(true) - $startTime) > ($cronTimeLimit - 3)) {
-            stopAndSave($stateFile, $state, $start, "Laikas baigėsi cikle ($start).");
+            stopAndSave($pdo, $state, $start, "Laikas baigėsi cikle ($start).");
         }
 
         $eid = $item['eid'];
@@ -297,14 +319,12 @@ do {
         $country = $existing['country'] ?? null;
         $category = $existing['category'] ?? null;
 
-        // Jei trūksta šalies/kategorijos -> bandome nustatyti
         if (!$existing || !$country || !$category) {
             if (!$country) $country = function_exists('detect_country') ? detect_country($item['title']) : null;
             if (!$category) $category = function_exists('detect_category') ? detect_category($item['url']) : null;
             $shouldUpdateDB = true; 
         }
 
-        // Jei pasikeitė kaina ar pavadinimas
         if ($existing) {
             if ($existing['title'] !== $item['title']) $shouldUpdateDB = true;
             if (abs((float)$existing['price'] - $item['price']) > 0.001) $shouldUpdateDB = true;
@@ -312,9 +332,8 @@ do {
             $shouldUpdateDB = true;
         }
 
-        // Jei reikia atnaujinti, bet nėra foto -> traukiame iš prekės puslapio
         if ($shouldUpdateDB && !$hasPhoto) {
-            usleep(100000); // 0.1s pauzė
+            usleep(100000); 
             $innerHtml = fetchUrl($item['url']);
             if ($innerHtml) {
                 $innerDom = new DOMDocument();
@@ -351,16 +370,14 @@ do {
 
     $start += $perPage;
     
-    // 7. Peradresavimas (Browser mode)
+    // 7. Peradresavimas / Būsenos saugojimas
     if ($mode === 'browser') {
-        // Išsaugome būseną, kad kitas puslapis žinotų cycle_id ir total_processed
         $state['start'] = $start;
         $state['status'] = 'running';
-        saveState($stateFile, $state);
+        save_db_state($pdo, $state);
 
         echo " OK<br>";
         if (ob_get_level() > 0) { ob_flush(); flush(); }
-        // JS peradresavimas į sekantį puslapį
         echo "<script>setTimeout(function(){ window.location.href = '?start=$start'; }, 500);</script>";
         echo "</body>";
         exit;
