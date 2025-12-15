@@ -282,7 +282,8 @@ $usersList = $pdo->query('SELECT * FROM users ORDER BY name ASC')->fetchAll();
 // Scraper Būsena ir Produktai
 $productStats = [];
 $scraperState = ['start' => 0, 'status' => 'Nežinoma', 'last_run' => 0, 'history' => [], 'cooldown_enabled' => 0];
-$otherJobsData = []; // ID 2 ir ID 3 duomenys
+$otherJobsData = []; 
+$expiringProducts = []; // NAUJA: Greičiausiai besibaigiančios prekės
 
 if ($activeTab === 'products') {
     $productStats['total'] = $pdo->query("SELECT COUNT(*) FROM products")->fetchColumn();
@@ -313,6 +314,13 @@ if ($activeTab === 'products') {
             'history' => json_decode($j['history'], true) ?: []
         ];
     }
+
+    // NAUJA: Top 5 greičiausiai besibaigiančios
+    // Tik tos, kurios turi datą ir ji dar ateityje
+    $expSql = "SELECT title, expires_at, url FROM products 
+               WHERE expires_at IS NOT NULL AND expires_at > NOW() 
+               ORDER BY expires_at ASC LIMIT 5";
+    $expiringProducts = $pdo->query($expSql)->fetchAll();
 }
 
 render_head('Administratoriaus pultas');
@@ -506,6 +514,47 @@ render_nav();
 
             <div style="display:grid; gap:20px; grid-template-columns: 1fr;">
                 
+                <?php if (!empty($expiringProducts)): ?>
+                    <div style="border:1px solid #dcedc8; background:#f1f8e9; padding:20px; border-radius:12px;">
+                        <h3>Greičiausiai baigsis (Top 5)</h3>
+                        <div style="background:#fff; border-radius:8px; border:1px solid #dcedc8; overflow:hidden;">
+                            <table class="table" style="margin-top:0;">
+                                <thead>
+                                    <tr>
+                                        <th>Pavadinimas</th>
+                                        <th>Baigsis</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($expiringProducts as $exp): ?>
+                                        <?php
+                                        // Pavadinimo valymas (Regex kaip Shop.php)
+                                        $displayTitle = $exp['title'];
+                                        $displayTitle = preg_replace('/(?:_\s*)+/', ' ', $displayTitle);
+                                        $displayTitle = preg_replace('/(?:\.\s*){2,}/', ' ', $displayTitle);
+                                        $displayTitle = trim(preg_replace('/\s+/', ' ', $displayTitle));
+                                        
+                                        $timeLeft = strtotime($exp['expires_at']) - time();
+                                        $hoursLeft = round($timeLeft / 3600, 1);
+                                        $color = $hoursLeft < 3 ? '#c00' : '#33691e';
+                                        ?>
+                                        <tr>
+                                            <td><?php echo e($displayTitle); ?></td>
+                                            <td style="color:<?php echo $color; ?>; font-weight:600;">
+                                                <?php echo $exp['expires_at']; ?> (<?php echo $hoursLeft; ?> val.)
+                                            </td>
+                                            <td style="text-align:right;">
+                                                <a href="<?php echo e($exp['url']); ?>" target="_blank" style="font-size:0.85rem; text-decoration:underline;">Peržiūrėti</a>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                <?php endif; ?>
+
                 <div style="border:1px solid #ddd; padding:20px; border-radius:12px;">
                     <h3>1. Automatinis nuskaitymas (Cron)</h3>
                     <div style="background:#f9f9f9; padding:15px; border-radius:8px; margin-bottom:20px; border:1px solid #eee;">
