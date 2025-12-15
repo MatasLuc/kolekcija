@@ -9,7 +9,7 @@ require_once __DIR__ . '/functions.php'; // Reikalinga log_cron_history funkcija
 $secretKey = 'ManoSlaptasRaktas123'; // Turi sutapti su jūsų raktu
 $itemsPerRun = 150; // Kiek prekių tikrinti per vieną kartą
 $logFile = __DIR__ . '/expiry.log'; // Papildomas failinis logas (jei reikia)
-
+set_time_limit(120); // Leidžiame skriptui veikti 2 minutes
 // --- APSAUGA ---
 $key = $_GET['key'] ?? '';
 if (php_sapi_name() === 'cli' && isset($argv[1])) {
