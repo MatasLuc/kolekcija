@@ -3,7 +3,7 @@ require_once __DIR__ . '/partials.php';
 require_admin();
 require_csrf();
 
-// --- KONFIGŪRACIJA IR FUNKCIJOS ---
+// --- KINTAMIEJI IR FUNKCIJOS ---
 
 $alert = ['type' => '', 'message' => ''];
 $uploadDir = __DIR__ . '/uploads';
@@ -80,7 +80,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'produ
 
     if ($subAction === 'delete_all') {
         $pdo->exec("TRUNCATE TABLE products");
-        // Resetinam scraperį
         $newCycleId = uniqid('RUN_');
         $pdo->prepare("UPDATE scraper_state SET start_pos=0, status='running', last_run=0, total_processed=0, cycle_id=? WHERE id=1")->execute([$newCycleId]);
         set_alert('success', 'Visos prekės ištrintos. Scraperis nustatytas iš naujo.');
@@ -110,7 +109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'produ
         set_alert('success', "Informacija atnaujinta $count prekėms.");
         
     } elseif ($subAction === 'reset_cron') {
-        // Priverstinis Reset: nustatome 'running', start=0 ir perkrauname puslapį
+        // Priverstinis Reset
         $newCycleId = uniqid('RUN_');
         $stmt = $pdo->prepare("UPDATE scraper_state SET start_pos = 0, status = 'running', last_run = 0, total_processed = 0, cycle_id = ? WHERE id = 1");
         $stmt->execute([$newCycleId]);
@@ -119,9 +118,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'produ
         exit;
 
     } elseif ($subAction === 'toggle_cooldown') {
-        // Poilsio režimo perjungimas (0 arba 1)
+        // Poilsio režimo perjungimas
         $pdo->exec("UPDATE scraper_state SET cooldown_enabled = NOT cooldown_enabled WHERE id = 1");
-        set_alert('success', 'Poilsio režimo nustatymas pakeistas.');
+        set_alert('success', 'Poilsio režimas pakeistas.');
 
     } elseif ($subAction === 'check_duplicates') {
         $sql = "SELECT url, COUNT(*) as cnt, GROUP_CONCAT(id) as ids, MIN(title) as sample_title
@@ -259,7 +258,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $activeTab = $_GET['tab'] ?? 'design';
 
-// Tikriname ar buvo Reset
 if (isset($_GET['reset']) && $_GET['reset'] == 'success') {
     set_alert('success', 'Cron skaitiklis sėkmingai perkrautas (Reset). Pradėtas naujas ciklas.');
 }
