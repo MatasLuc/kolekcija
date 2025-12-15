@@ -1,8 +1,6 @@
 <?php
 require_once __DIR__ . '/partials.php';
 require_admin();
-
-// 1. Apsauga: Tikriname CSRF visoms POST užklausoms
 require_csrf();
 
 // --- KINTAMIEJI IR FUNKCIJOS ---
@@ -82,10 +80,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'produ
 
     if ($subAction === 'delete_all') {
         $pdo->exec("TRUNCATE TABLE products");
-        $stateFile = __DIR__ . '/scraper_state.json';
-        $newState = ['start' => 0, 'status' => 'running', 'last_run' => 0, 'history' => []];
-        file_put_contents($stateFile, json_encode($newState));
-        set_alert('success', 'Visos prekės ištrintos. Scraperis nustatytas į 0.');
+        // Resetinam scraperį
+        $newCycleId = uniqid('RUN_');
+        $pdo->prepare("UPDATE scraper_state SET start_pos=0, status='running', last_run=0, total_processed=0, cycle_id=? WHERE id=1")->execute([$newCycleId]);
+        set_alert('success', 'Visos prekės ištrintos. Scraperis nustatytas iš naujo.');
         
     } elseif ($subAction === 'reset_countries') {
         $pdo->exec("UPDATE products SET country = NULL, category = NULL");
@@ -112,14 +110,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'produ
         set_alert('success', "Informacija atnaujinta $count prekėms.");
         
     } elseif ($subAction === 'reset_cron') {
-        $stateFile = __DIR__ . '/scraper_state.json';
-        $newState = ['start' => 0, 'status' => 'running', 'last_run' => 0, 'history' => []];
-        if (file_exists($stateFile)) {
-            $old = json_decode(file_get_contents($stateFile), true);
-            if ($old && isset($old['history'])) $newState['history'] = $old['history'];
-        }
-        file_put_contents($stateFile, json_encode($newState));
-        set_alert('success', 'Cron skaitiklis nustatytas į 0.');
+        // --- SPRENDIMAS JŪSŲ PROBLEMAI ---
+        // 1. Nustatome statusą į 'running', kad jis nemanytų, jog baigė darbą.
+        // 2. last_run nustatome į 0, kad neįsijungtų "Cooldown" (poilsio) režimas.
+        // 3. Sugeneruojame naują cycle_id, kad visos prekės būtų priskirtos naujam ciklui.
+        $newCycleId = uniqid('RUN_');
+        $stmt = $pdo->prepare("UPDATE scraper_state SET start_pos = 0, status = 'running', last_run = 0, total_processed = 0, cycle_id = ? WHERE id = 1");
+        $stmt->execute([$newCycleId]);
+        
+        set_alert('success', 'Cron skaitiklis nustatytas į 0. Statusas: Priverstinai paleistas (Running). Pradėtas naujas ciklas.');
 
     } elseif ($subAction === 'check_duplicates') {
         $sql = "SELECT url, COUNT(*) as cnt, GROUP_CONCAT(id) as ids, MIN(title) as sample_title
@@ -157,7 +156,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'produ
 
 // 2. DIZAINAS (HERO)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'hero') {
-    // ... (kodas nepakeistas) ...
     $hStmt = $pdo->query('SELECT media_value FROM hero_content WHERE id = 1');
     $curr = $hStmt->fetch();
     $mediaValue = $curr['media_value'] ?? '';
@@ -194,7 +192,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'hero'
 
 // 3. NAUJIENOS
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'news') {
-    // ... (kodas nepakeistas) ...
     $title = trim($_POST['news_title']);
     $body = trim($_POST['news_body']);
     $id = $_POST['news_id'] ?? '';
@@ -218,9 +215,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'news'
     }
 }
 
-// 4. KITI VEIKSMAI (paveiksliukai, trynimas)
+// 4. KITI VEIKSMAI
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-     // ... (kodas nepakeistas) ...
     $act = $_POST['action'] ?? '';
     if ($act === 'news_image_add') {
         [$ok, $msg] = upload_news_image((int)$_POST['news_id'], $_FILES['news_image'], $_POST['caption'], $uploadDir, $pdo);
@@ -287,9 +283,17 @@ if ($activeTab === 'products') {
     $productStats['with_category'] = $pdo->query("SELECT COUNT(*) FROM products WHERE category IS NOT NULL AND category != ''")->fetchColumn();
     $productStats['without_country'] = $productStats['total'] - $productStats['with_country'];
     
-    if (file_exists(__DIR__ . '/scraper_state.json')) {
-        $json = json_decode(file_get_contents(__DIR__ . '/scraper_state.json'), true);
-        if ($json) $scraperState = array_merge($scraperState, $json);
+    // --- GAVIMAS IŠ DUOMENŲ BAZĖS ---
+    $sStmt = $pdo->query("SELECT * FROM scraper_state WHERE id = 1");
+    $sRow = $sStmt->fetch();
+    if ($sRow) {
+        $scraperState = [
+            'start' => $sRow['start_pos'],
+            'status' => $sRow['status'],
+            'last_run' => $sRow['last_run'],
+            'cycle_id' => $sRow['cycle_id'],
+            'history' => json_decode($sRow['history'], true) ?: []
+        ];
     }
 }
 
@@ -365,15 +369,13 @@ render_nav();
 
 
         <?php if ($activeTab === 'news'): ?>
-            <h2>Kurti naujieną</h2>
+             <h2>Kurti naujieną</h2>
             <form method="post" enctype="multipart/form-data" style="background:#f9f9f9; padding:20px; border-radius:12px; margin-bottom:30px;">
                 <input type="hidden" name="csrf_token" value="<?php echo csrf_token(); ?>"> <input type="hidden" name="action" value="news">
                 <label>Pavadinimas</label>
                 <input name="news_title" required placeholder="Įveskite pavadinimą...">
-
                 <label>Turinys</label>
                 <textarea name="news_body" rows="5" required placeholder="Rašykite tekstą čia..."></textarea>
-
                 <div class="two-up">
                     <div>
                         <label>Pagrindinė nuotrauka</label>
@@ -384,7 +386,6 @@ render_nav();
                         <input name="news_image_caption" placeholder="(neprivaloma)">
                     </div>
                 </div>
-
                 <button type="submit">Skelbti naujieną</button>
             </form>
 
@@ -412,9 +413,7 @@ render_nav();
                                             <textarea name="news_body" rows="4" required><?php echo e($item['body']); ?></textarea>
                                             <button type="submit">Atnaujinti tekstą</button>
                                         </form>
-                                        
                                         <hr style="margin:20px 0;">
-
                                         <h4>Galerija</h4>
                                         <form method="post" enctype="multipart/form-data" class="inline-form" style="margin-bottom:15px;">
                                             <input type="hidden" name="csrf_token" value="<?php echo csrf_token(); ?>"> <input type="hidden" name="action" value="news_image_add">
@@ -423,7 +422,6 @@ render_nav();
                                             <input name="caption" placeholder="Aprašas" style="width:150px;">
                                             <button type="submit">Pridėti foto</button>
                                         </form>
-
                                         <div class="news-image-admin__grid">
                                             <?php foreach ($imagesByNews[$item['id']] ?? [] as $img): ?>
                                                 <div class="news-image-card <?php echo $img['is_primary'] ? 'primary' : ''; ?>">
@@ -446,7 +444,6 @@ render_nav();
                                                 </div>
                                             <?php endforeach; ?>
                                         </div>
-
                                         <hr style="margin:20px 0;">
                                         <form method="post" onsubmit="return confirm('Ar tikrai ištrinti visą naujieną?');">
                                             <input type="hidden" name="csrf_token" value="<?php echo csrf_token(); ?>"> <input type="hidden" name="action" value="news_delete">
@@ -500,7 +497,7 @@ render_nav();
                             <span><strong>Progresas:</strong> <?php echo $scraperState['start'] ?? 0; ?> prekė</span>
                         </div>
                         <p style="margin:0; font-size:0.85rem; color:#666;">
-                            Paskutinis aktyvumas: <?php echo isset($scraperState['last_run']) ? date('Y-m-d H:i:s', $scraperState['last_run']) : '-'; ?>
+                            Paskutinis aktyvumas: <?php echo isset($scraperState['last_run']) && $scraperState['last_run'] > 0 ? date('Y-m-d H:i:s', $scraperState['last_run']) : '-'; ?>
                         </p>
                     </div>
 
@@ -668,7 +665,7 @@ render_nav();
 
 
         <?php if ($activeTab === 'users'): ?>
-            <h2>Vartotojų valdymas</h2>
+             <h2>Vartotojų valdymas</h2>
             <table class="table">
                 <thead><tr><th>Vardas</th><th>El. paštas</th><th>Rolė</th><th>Veiksmas</th></tr></thead>
                 <tbody>
