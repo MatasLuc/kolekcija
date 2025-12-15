@@ -1,7 +1,7 @@
 <?php
-// db.php - Prisijungimas ir DB struktūra
+// db.php - Prisijungimas ir DB struktūra (Su Cooldown nustatymu)
 
-// --- SVARBU: Nustatome Lietuvos laiką ---
+// Nustatome Lietuvos laiką
 date_default_timezone_set('Europe/Vilnius');
 
 // 1. Užkrauname .env
@@ -33,7 +33,6 @@ $dbPass = getenv('DB_PASS');
 $dbPort = getenv('DB_PORT') ?: '3306';
 
 if (!$dbName || !$dbUser) {
-    error_log('Klaida: Nenurodyti DB_NAME arba DB_USER faile .env');
     die('Klaida: Patikrinkite .env failą.');
 }
 
@@ -99,11 +98,12 @@ function ensure_schema(PDO $pdo): void
             last_run INT DEFAULT 0,
             cycle_id VARCHAR(50) DEFAULT NULL,
             total_processed INT DEFAULT 0,
-            history TEXT DEFAULT NULL
+            history TEXT DEFAULT NULL,
+            cooldown_enabled TINYINT DEFAULT 0 -- NAUJAS STULPELIS (0 = išjungta pagal nutylėjimą)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
         
-        "INSERT INTO scraper_state (id, start_pos, status, last_run, cycle_id, total_processed, history)
-         VALUES (1, 0, 'finished', 0, '', 0, '[]')
+        "INSERT INTO scraper_state (id, start_pos, status, last_run, cycle_id, total_processed, history, cooldown_enabled)
+         VALUES (1, 0, 'finished', 0, '', 0, '[]', 0)
          ON DUPLICATE KEY UPDATE id=1;",
 
         "INSERT INTO hero_content (id, title, message, button_text, button_url, image_url, text_align, media_type, media_value)
@@ -117,6 +117,13 @@ function ensure_schema(PDO $pdo): void
         } catch (PDOException $e) {
             // Ignoruojame
         }
+    }
+    
+    // Papildomai bandome pridėti stulpelį, jei lentelė jau sukurta seniau
+    try {
+        $pdo->exec("ALTER TABLE scraper_state ADD COLUMN cooldown_enabled TINYINT DEFAULT 0");
+    } catch (PDOException $e) {
+        // Stulpelis jau yra, ignoruojame
     }
 }
 
