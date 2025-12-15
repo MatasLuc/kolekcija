@@ -80,7 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'produ
 
     if ($subAction === 'delete_all') {
         $pdo->exec("TRUNCATE TABLE products");
-        // Resetinam scraperį DB lentelėje
+        // Resetinam scraperį
         $newCycleId = uniqid('RUN_');
         $pdo->prepare("UPDATE scraper_state SET start_pos=0, status='running', last_run=0, total_processed=0, cycle_id=? WHERE id=1")->execute([$newCycleId]);
         set_alert('success', 'Visos prekės ištrintos. Scraperis nustatytas iš naujo.');
@@ -110,15 +110,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'produ
         set_alert('success', "Informacija atnaujinta $count prekėms.");
         
     } elseif ($subAction === 'reset_cron') {
-        // --- PATAISYTA: PRIVERSTINIS RESETAS ---
+        // Priverstinis Reset: nustatome 'running', start=0 ir perkrauname puslapį
         $newCycleId = uniqid('RUN_');
-        // Nustatome status='running' ir last_run=0, kad apeitume cooldown laiką
         $stmt = $pdo->prepare("UPDATE scraper_state SET start_pos = 0, status = 'running', last_run = 0, total_processed = 0, cycle_id = ? WHERE id = 1");
         $stmt->execute([$newCycleId]);
         
-        // Nukreipiame, kad atsinaujintų duomenys ekrane
         header("Location: admin.php?tab=products&reset=success");
         exit;
+
+    } elseif ($subAction === 'toggle_cooldown') {
+        // Poilsio režimo perjungimas (0 arba 1)
+        $pdo->exec("UPDATE scraper_state SET cooldown_enabled = NOT cooldown_enabled WHERE id = 1");
+        set_alert('success', 'Poilsio režimo nustatymas pakeistas.');
 
     } elseif ($subAction === 'check_duplicates') {
         $sql = "SELECT url, COUNT(*) as cnt, GROUP_CONCAT(id) as ids, MIN(title) as sample_title
@@ -215,7 +218,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'news'
     }
 }
 
-// 4. KITI VEIKSMAI (paveiksliukai, trynimas)
+// 4. KITI VEIKSMAI (paveiksliukai, trynimas, roles)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $act = $_POST['action'] ?? '';
     if ($act === 'news_image_add') {
@@ -256,7 +259,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $activeTab = $_GET['tab'] ?? 'design';
 
-// Tikriname, ar ką tik buvo padarytas resetas
+// Tikriname ar buvo Reset
 if (isset($_GET['reset']) && $_GET['reset'] == 'success') {
     set_alert('success', 'Cron skaitiklis sėkmingai perkrautas (Reset). Pradėtas naujas ciklas.');
 }
@@ -278,9 +281,9 @@ foreach ($imagesRaw as $img) $imagesByNews[$img['news_id']][] = $img;
 // Vartotojai
 $usersList = $pdo->query('SELECT * FROM users ORDER BY name ASC')->fetchAll();
 
-// Produktų statistika
+// Scraper Būsena ir Produktai
 $productStats = [];
-$scraperState = ['start' => 0, 'status' => 'Nežinoma', 'last_run' => 0, 'history' => []];
+$scraperState = ['start' => 0, 'status' => 'Nežinoma', 'last_run' => 0, 'history' => [], 'cooldown_enabled' => 0];
 
 if ($activeTab === 'products') {
     $productStats['total'] = $pdo->query("SELECT COUNT(*) FROM products")->fetchColumn();
@@ -288,7 +291,7 @@ if ($activeTab === 'products') {
     $productStats['with_category'] = $pdo->query("SELECT COUNT(*) FROM products WHERE category IS NOT NULL AND category != ''")->fetchColumn();
     $productStats['without_country'] = $productStats['total'] - $productStats['with_country'];
     
-    // --- GAVIMAS IŠ DUOMENŲ BAZĖS LENTELĖS ---
+    // GAVIMAS IŠ DUOMENŲ BAZĖS
     $sStmt = $pdo->query("SELECT * FROM scraper_state WHERE id = 1");
     $sRow = $sStmt->fetch();
     if ($sRow) {
@@ -297,7 +300,9 @@ if ($activeTab === 'products') {
             'status' => $sRow['status'],
             'last_run' => $sRow['last_run'],
             'cycle_id' => $sRow['cycle_id'],
-            'history' => json_decode($sRow['history'], true) ?: []
+            'total_processed' => $sRow['total_processed'],
+            'history' => json_decode($sRow['history'], true) ?: [],
+            'cooldown_enabled' => (int)($sRow['cooldown_enabled'] ?? 0)
         ];
     }
 }
@@ -496,32 +501,49 @@ render_nav();
                 <div style="border:1px solid #ddd; padding:20px; border-radius:12px;">
                     <h3>1. Automatinis nuskaitymas (Cron)</h3>
                     <div style="background:#f9f9f9; padding:15px; border-radius:8px; margin-bottom:20px; border:1px solid #eee;">
-                        <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
-                            <span><strong>Būsena:</strong> 
-                                <?php if (($scraperState['status'] ?? '') === 'running'): ?>
-                                    <span style="color:#2ecc71;">● Vyksta</span>
-                                <?php elseif (($scraperState['status'] ?? '') === 'finished'): ?>
-                                    <span style="color:#f39c12;">● Ilsisi (Baigta)</span>
-                                <?php else: ?>
-                                    <span style="color:#95a5a6;">● Nežinoma</span>
-                                <?php endif; ?>
-                            </span>
-                            <span><strong>Progresas:</strong> <?php echo $scraperState['start'] ?? 0; ?> prekė</span>
+                        
+                        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                            <div>
+                                <p style="margin:0 0 5px 0;"><strong>Būsena:</strong> 
+                                    <?php 
+                                    if ($scraperState['status'] === 'running') echo '<span style="color:#2ecc71;">● Vyksta</span>';
+                                    elseif ($scraperState['status'] === 'finished') echo '<span style="color:#f39c12;">● Ilsisi (Baigta)</span>';
+                                    else echo '<span style="color:#95a5a6;">● ' . e($scraperState['status']) . '</span>';
+                                    ?>
+                                </p>
+                                <p style="margin:0;"><strong>Poilsio režimas (1 val.):</strong> 
+                                    <?php echo $scraperState['cooldown_enabled'] ? '<span style="color:#c00;">ĮJUNGTAS</span>' : '<span style="color:green;">IŠJUNGTAS (Sukasi nuolat)</span>'; ?>
+                                </p>
+                            </div>
+
+                            <form method="post" style="margin:0;">
+                                <input type="hidden" name="csrf_token" value="<?php echo csrf_token(); ?>">
+                                <input type="hidden" name="action" value="products_control">
+                                <input type="hidden" name="sub_action" value="toggle_cooldown">
+                                <button type="submit" style="padding:6px 12px; font-size:0.85rem; border:1px solid #ccc; background:#fff; border-radius:6px; cursor:pointer;">
+                                    <?php echo $scraperState['cooldown_enabled'] ? 'Išjungti poilsį' : 'Įjungti poilsį'; ?>
+                                </button>
+                            </form>
                         </div>
-                        <p style="margin:0; font-size:0.85rem; color:#666;">
-                            Paskutinis aktyvumas: <?php echo isset($scraperState['last_run']) && $scraperState['last_run'] > 0 ? date('Y-m-d H:i:s', $scraperState['last_run']) : '-'; ?>
-                        </p>
-                        <p style="margin:5px 0 0; font-size:0.75rem; color:#999;">(Laikas rodomas pagal Lietuvos laiko juostą)</p>
+
+                        <hr style="margin:15px 0; border:0; border-top:1px solid #e5e5e5;">
+
+                        <div style="font-size:0.9rem; color:#444;">
+                            <p style="margin:4px 0;"><strong>Dabartinė pozicija (Start):</strong> <?php echo $scraperState['start']; ?></p>
+                            <p style="margin:4px 0;"><strong>Rasta prekių cikle:</strong> <?php echo $scraperState['total_processed']; ?></p>
+                            <p style="margin:4px 0;"><strong>Paskutinis aktyvumas:</strong> <?php echo $scraperState['last_run'] > 0 ? date('Y-m-d H:i:s', $scraperState['last_run']) : '-'; ?></p>
+                        </div>
                     </div>
 
                     <?php if (!empty($scraperState['history'])): ?>
                         <div style="margin-bottom:20px;">
-                            <h4 style="margin:0 0 10px 0; font-size:0.95rem; color:#555;">Paskutiniai 5 ciklų išvalymai:</h4>
+                            <h4 style="margin:0 0 10px 0; font-size:0.95rem; color:#555;">Paskutiniai 5 ciklų įvykiai:</h4>
                             <table style="width:100%; font-size:0.85rem; border-collapse:collapse;">
                                 <thead style="background:#f4f4f4;">
                                     <tr>
                                         <th style="padding:6px; text-align:left; border-bottom:1px solid #ddd;">Data</th>
-                                        <th style="padding:6px; text-align:right; border-bottom:1px solid #ddd;">Ištrinta prekių</th>
+                                        <th style="padding:6px; text-align:left; border-bottom:1px solid #ddd;">Žinutė</th>
+                                        <th style="padding:6px; text-align:right; border-bottom:1px solid #ddd;">Ištrinta</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -530,8 +552,11 @@ render_nav();
                                             <td style="padding:6px; border-bottom:1px solid #eee; color:#333;">
                                                 <?php echo date('Y-m-d H:i', $log['time']); ?>
                                             </td>
+                                            <td style="padding:6px; border-bottom:1px solid #eee; color:#666;">
+                                                <?php echo e($log['msg'] ?? '-'); ?>
+                                            </td>
                                             <td style="padding:6px; text-align:right; border-bottom:1px solid #eee;">
-                                                <?php if ($log['count'] > 0): ?>
+                                                <?php if (($log['count'] ?? 0) > 0): ?>
                                                     <span style="color:#c00; font-weight:bold;">-<?php echo $log['count']; ?></span>
                                                 <?php else: ?>
                                                     <span style="color:#ccc;">0</span>
