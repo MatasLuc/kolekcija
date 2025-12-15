@@ -1,6 +1,6 @@
 <?php
 // cron_expiry.php - Automatinis galiojimo tikrinimas (Cron Job)
-// FIX: Pridėtas &nbsp; ir HTML entitetų valymas geresniam datos atpažinimui.
+// FIX: Dabar ignoruoja HTML tagus (</label>, <span>) ir teisingai nuskaito datą.
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/functions.php';
@@ -39,13 +39,8 @@ function fetch_html_cron($url) {
 }
 
 function parse_date_cron($text) {
-    // 1. Išvalome HTML entitetus (&nbsp; ir t.t.)
-    $text = html_entity_decode($text);
-    // 2. Išvalome nematomus simbolius ir tarpus
-    $text = trim(preg_replace('/\s+/u', ' ', $text));
-    
-    // 3. Bandome atpažinti formatus
-    if (preg_match('/^\d{4}-\d{2}-\d{2}/', $text)) return strtotime($text);
+    $text = trim($text);
+    if (preg_match('/^\d{4}-\d{2}-\d{2}(?:\s+\d{1,2}:\d{2})?/', $text, $m)) return strtotime($m[0]);
     
     if (mb_stripos($text, 'šiandien') !== false) {
         $timePart = preg_replace('/[^0-9:]/', '', $text);
@@ -58,10 +53,34 @@ function parse_date_cron($text) {
     return null;
 }
 
+function extract_pirkis_date($html) {
+    // 1. Randame vietą, kur prasideda "Baigiasi"
+    $pos = mb_stripos($html, 'Baigiasi');
+    if ($pos === false) return null;
+
+    // 2. Paimame gabaliuką teksto į priekį (kad apimtų datą ir tagus)
+    $chunk = mb_substr($html, $pos, 300);
+
+    // 3. Išvalome tagus (tampa "Baigiasi : Šiandien 15:26")
+    $clean = strip_tags($chunk);
+    
+    // 4. Išvalome tarpus ir specialius simbolius
+    $clean = html_entity_decode($clean);
+    $clean = trim(preg_replace('/\s+/u', ' ', $clean));
+
+    // 5. Ieškome vieno iš 3 formatų
+    // Format 1: 2025-12-17 11:18
+    // Format 2: Šiandien 15:26
+    // Format 3: Rytoj 10:05
+    if (preg_match('/Baigiasi\s*:\s*(\d{4}-\d{2}-\d{2}(?:\s+\d{1,2}:\d{2})?|Šiandien\s+\d{1,2}:\d{2}|Rytoj\s+\d{1,2}:\d{2})/iu', $clean, $m)) {
+        return $m[1];
+    }
+    return null;
+}
+
 // --- LOGIKA ---
 
 try {
-    // Prioritetas: be datos (NULL) -> artimiausia pabaiga (ASC)
     $sql = "SELECT id, url, title FROM products 
             ORDER BY (expires_at IS NULL) DESC, expires_at ASC 
             LIMIT :limit";
@@ -93,12 +112,10 @@ try {
             $shouldDelete = true;
             $reason = "404/Nepasiekiamas";
         } else {
-            // Regex pataisymas: leidžiame tarpus, &nbsp; ir kitus simbolius po "Baigiasi:"
-            // (?:\s|&nbsp;|&#160;)* - praleidžia visus tarpus
-            if (preg_match('/Baigiasi:(?:\s|&nbsp;|&#160;)*(.*?)(?=<|\n|\r)/iu', $html, $matches)) {
-                $rawDate = $matches[1];
+            // NAUJA LOGIKA: Naudojame extract_pirkis_date
+            $rawDate = extract_pirkis_date($html);
+            if ($rawDate) {
                 $ts = parse_date_cron($rawDate);
-                
                 if ($ts) {
                     $foundExpiryDate = date('Y-m-d H:i:s', $ts);
                     if ($ts < time()) {
@@ -125,6 +142,7 @@ try {
                 $upd = $pdo->prepare("UPDATE products SET scraped_at = NOW(), expires_at = :exp WHERE id = :id");
                 $upd->execute([':exp' => $foundExpiryDate, ':id' => $item['id']]);
             } else {
+                // Jei datos neradome, tiesiog atnaujiname laiką
                 $pdo->prepare("UPDATE products SET scraped_at = NOW() WHERE id = ?")->execute([$item['id']]);
             }
             $updated++;
