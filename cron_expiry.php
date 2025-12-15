@@ -1,13 +1,13 @@
 <?php
-// cron_expiry.php - Automatinis galiojimo tikrinimas (Cron Job) su Istorija ir DB išsaugojimu
-// Nustatyti cron-job.org vykdyti kas 15-30 minučių.
+// cron_expiry.php - Automatinis galiojimo tikrinimas (Cron Job)
+// FIX: Pridėtas &nbsp; ir HTML entitetų valymas geresniam datos atpažinimui.
 
 require_once __DIR__ . '/db.php';
-require_once __DIR__ . '/functions.php'; // Reikalinga log_cron_history funkcijai
+require_once __DIR__ . '/functions.php';
 
 // --- KONFIGŪRACIJA ---
-$secretKey = 'ManoSlaptasRaktas123'; // Turi sutapti su jūsų raktu
-$itemsPerRun = 100; // Kiek prekių tikrinti per vieną kartą
+$secretKey = 'ManoSlaptasRaktas123'; 
+$itemsPerRun = 100; 
 $logFile = __DIR__ . '/expiry.log'; 
 set_time_limit(120); 
 
@@ -39,13 +39,21 @@ function fetch_html_cron($url) {
 }
 
 function parse_date_cron($text) {
-    $text = trim(str_replace(' ', ' ', $text));
+    // 1. Išvalome HTML entitetus (&nbsp; ir t.t.)
+    $text = html_entity_decode($text);
+    // 2. Išvalome nematomus simbolius ir tarpus
+    $text = trim(preg_replace('/\s+/u', ' ', $text));
+    
+    // 3. Bandome atpažinti formatus
     if (preg_match('/^\d{4}-\d{2}-\d{2}/', $text)) return strtotime($text);
+    
     if (mb_stripos($text, 'šiandien') !== false) {
-        return strtotime(date('Y-m-d') . ' ' . preg_replace('/[^0-9:]/', '', $text));
+        $timePart = preg_replace('/[^0-9:]/', '', $text);
+        return strtotime(date('Y-m-d') . ' ' . $timePart);
     }
     if (mb_stripos($text, 'rytoj') !== false) {
-        return strtotime(date('Y-m-d', strtotime('+1 day')) . ' ' . preg_replace('/[^0-9:]/', '', $text));
+        $timePart = preg_replace('/[^0-9:]/', '', $text);
+        return strtotime(date('Y-m-d', strtotime('+1 day')) . ' ' . $timePart);
     }
     return null;
 }
@@ -53,9 +61,7 @@ function parse_date_cron($text) {
 // --- LOGIKA ---
 
 try {
-    // 1. Imame prioritetines prekes:
-    // a) Kurios dar neturi nustatyto laiko (expires_at IS NULL)
-    // b) Kurios baigiasi anksčiausiai (ASC)
+    // Prioritetas: be datos (NULL) -> artimiausia pabaiga (ASC)
     $sql = "SELECT id, url, title FROM products 
             ORDER BY (expires_at IS NULL) DESC, expires_at ASC 
             LIMIT :limit";
@@ -87,16 +93,17 @@ try {
             $shouldDelete = true;
             $reason = "404/Nepasiekiamas";
         } else {
-            // Ieškome "Baigiasi: ..."
-            if (preg_match('/Baigiasi:\s*(.*?)(?=<|\n|\r)/iu', $html, $matches)) {
-                $ts = parse_date_cron($matches[1]);
+            // Regex pataisymas: leidžiame tarpus, &nbsp; ir kitus simbolius po "Baigiasi:"
+            // (?:\s|&nbsp;|&#160;)* - praleidžia visus tarpus
+            if (preg_match('/Baigiasi:(?:\s|&nbsp;|&#160;)*(.*?)(?=<|\n|\r)/iu', $html, $matches)) {
+                $rawDate = $matches[1];
+                $ts = parse_date_cron($rawDate);
+                
                 if ($ts) {
                     $foundExpiryDate = date('Y-m-d H:i:s', $ts);
-                    
-                    // Jei laikas pasibaigęs
                     if ($ts < time()) {
                         $shouldDelete = true;
-                        $reason = "Laikas pasibaigė ({$matches[1]})";
+                        $reason = "Laikas pasibaigė ($rawDate)";
                     }
                 }
             }
@@ -114,19 +121,15 @@ try {
             $pdo->prepare("DELETE FROM products WHERE id = ?")->execute([$item['id']]);
             $deleted++;
         } else {
-            // Atnaujiname datą DB
             if ($foundExpiryDate) {
-                // Jei radome datą - įrašome ją
                 $upd = $pdo->prepare("UPDATE products SET scraped_at = NOW(), expires_at = :exp WHERE id = :id");
                 $upd->execute([':exp' => $foundExpiryDate, ':id' => $item['id']]);
             } else {
-                // Jei datos neradome (bet prekė gyva), tik atnaujiname scraped_at, kad nukristų į eilės galą
                 $pdo->prepare("UPDATE products SET scraped_at = NOW() WHERE id = ?")->execute([$item['id']]);
             }
             $updated++;
         }
         
-        // Maža pauzė
         usleep(200000); 
     }
 
