@@ -1,6 +1,6 @@
 <?php
-// expiry_checker.php - Galiojimo laiko tikrinimas (V6 - Target Class)
-// Tikslingai ieško klasės "uk-prekes-data", kurioje yra data.
+// expiry_checker.php - Galiojimo laiko tikrinimas (V7 - ID "aukciono_pabaiga")
+// Debug versija: rodo ar randa ID.
 
 set_time_limit(0);
 ignore_user_abort(true);
@@ -15,8 +15,8 @@ $pauseBetweenItems = 1000000; // 1s
 
 function fetch_html_simple($url) {
     $userAgents = [
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/121.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/120.0.0.0 Safari/537.36'
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/119.0.0.0 Safari/537.36'
     ];
     
     $ch = curl_init();
@@ -45,52 +45,32 @@ function parse_pirkis_date($text) {
     if (preg_match('/^\d{4}-\d{2}-\d{2}(?:\s+\d{1,2}:\d{2})?/', $text, $m)) {
         return strtotime($m[0]);
     }
-    if (mb_stripos($text, 'šiandien') !== false) {
-        $timePart = preg_replace('/[^0-9:]/', '', $text);
-        if (!$timePart) $timePart = '23:59';
-        return strtotime(date('Y-m-d') . ' ' . $timePart);
-    }
-    if (mb_stripos($text, 'rytoj') !== false) {
-        $timePart = preg_replace('/[^0-9:]/', '', $text);
-        if (!$timePart) $timePart = '23:59';
-        return strtotime(date('Y-m-d', strtotime('+1 day')) . ' ' . $timePart);
-    }
     return null;
 }
 
 function extract_pirkis_date_debug($html) {
-    // 1. Ieškome DIV bloko su klase "uk-prekes-data"
-    if (preg_match('/<div[^>]*class="[^"]*uk-prekes-data[^"]*"[^>]*>(.*?)<\/div>/is', $html, $match)) {
-        $chunk = $match[1];
-        $clean = strip_tags($chunk);
-        $clean = html_entity_decode($clean);
+    // 1. Ieškome pagal ID "aukciono_pabaiga"
+    if (preg_match('/id="aukciono_pabaiga"[^>]*>(.*?)<\/label>/is', $html, $match)) {
+        $clean = strip_tags($match[1]);
         $clean = trim(preg_replace('/\s+/u', ' ', $clean));
-        
-        if (preg_match('/(\d{4}-\d{2}-\d{2}(?:\s+\d{1,2}:\d{2})?|Šiandien\s+\d{1,2}:\d{2}|Rytoj\s+\d{1,2}:\d{2})/iu', $clean, $m)) {
-            return [$m[1], $clean];
-        }
-        return [null, "DIV rastas, data nerasta. Turinys: " . mb_substr($clean, 0, 50)];
+        return [$clean, "Rasta pagal ID='aukciono_pabaiga'"];
     }
 
-    // 2. Atsarginis
-    $pos = mb_stripos($html, 'Baigiasi');
+    // 2. Atsarginis variantas
+    $pos = mb_stripos($html, 'Pardavimo pabaiga:');
     if ($pos !== false) {
-        $chunk = mb_substr($html, $pos, 300);
-        $clean = strip_tags($chunk);
-        $clean = html_entity_decode($clean);
-        $clean = trim(preg_replace('/\s+/u', ' ', $clean));
-        
-        if (preg_match('/(\d{4}-\d{2}-\d{2}(?:\s+\d{1,2}:\d{2})?|Šiandien\s+\d{1,2}:\d{2}|Rytoj\s+\d{1,2}:\d{2})/iu', $clean, $m)) {
-            return [$m[1], $clean];
-        }
+        return [null, "ID nerastas, bet tekstas 'Pardavimo pabaiga:' yra."];
     }
     
-    return [null, "Nerasta nei klasė 'uk-prekes-data', nei žodis 'Baigiasi'"];
+    // Debug info
+    $title = '';
+    if (preg_match('/<title>(.*?)<\/title>/is', $html, $m)) $title = strip_tags($m[1]);
+    return [null, "Nieko nerasta. Title: " . trim($title)];
 }
 
 // --- VAIZDAS ---
 echo '<body style="font-family: monospace; background: #111; color: #eee; padding: 20px; line-height: 1.6;">';
-echo "<h2 style='color:#fff; border-bottom:1px solid #444; padding-bottom:10px;'>GALIOJIMO LAIKO TIKRINTOJAS (V6)</h2>";
+echo "<h2 style='color:#fff; border-bottom:1px solid #444; padding-bottom:10px;'>GALIOJIMO LAIKO TIKRINTOJAS (V7 - TIKSLUS)</h2>";
 
 // --- LOGIKA ---
 
@@ -156,7 +136,7 @@ foreach ($items as $item) {
         } else {
             $pdo->prepare("UPDATE products SET scraped_at = NOW() WHERE id = ?")->execute([$item['id']]);
             $shortDebug = mb_substr($debugText, 0, 80) . '...';
-            echo "<span style='color:#777;'>[Data nerasta. Info: $shortDebug]</span> <span style='color:#0f0;'>OK</span>";
+            echo "<span style='color:#777;'>[Info: $shortDebug]</span> <span style='color:#0f0;'>OK</span>";
         }
         $updatedCount++;
     }
