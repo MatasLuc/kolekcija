@@ -1,6 +1,6 @@
 <?php
-// cron_expiry.php - Automatinis galiojimo tikrinimas (Cron Job)
-// FIX: Dabar ignoruoja HTML tagus (</label>, <span>) ir teisingai nuskaito datą.
+// cron_expiry.php - Automatinis galiojimo tikrinimas (V4 - GZIP & Encoding Fix)
+// Skirtas Cron Job'ams
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/functions.php';
@@ -32,47 +32,55 @@ function fetch_html_cron($url) {
     curl_setopt($ch, CURLOPT_TIMEOUT, 10);
     curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (CronJob Check) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    
+    // SVARBU: GZIP išpakavimas
+    curl_setopt($ch, CURLOPT_ENCODING, ''); 
+    
     $data = curl_exec($ch);
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
-    return ($code === 200 && $data) ? $data : null;
+    
+    if ($code !== 200 || !$data) return null;
+
+    // KONVERTUOJAME KODUOTĘ
+    if (!mb_check_encoding($data, 'UTF-8')) {
+        $data = mb_convert_encoding($data, 'UTF-8', 'Windows-1257');
+    }
+
+    return $data;
 }
 
 function parse_date_cron($text) {
     $text = trim($text);
-    if (preg_match('/^\d{4}-\d{2}-\d{2}(?:\s+\d{1,2}:\d{2})?/', $text, $m)) return strtotime($m[0]);
-    
+    if (preg_match('/^\d{4}-\d{2}-\d{2}(?:\s+\d{1,2}:\d{2})?/', $text, $m)) {
+        return strtotime($m[0]);
+    }
     if (mb_stripos($text, 'šiandien') !== false) {
         $timePart = preg_replace('/[^0-9:]/', '', $text);
+        if (!$timePart) $timePart = '23:59';
         return strtotime(date('Y-m-d') . ' ' . $timePart);
     }
     if (mb_stripos($text, 'rytoj') !== false) {
         $timePart = preg_replace('/[^0-9:]/', '', $text);
+        if (!$timePart) $timePart = '23:59';
         return strtotime(date('Y-m-d', strtotime('+1 day')) . ' ' . $timePart);
     }
     return null;
 }
 
-function extract_pirkis_date($html) {
-    // 1. Randame vietą, kur prasideda "Baigiasi"
+function extract_pirkis_date_cron($html) {
     $pos = mb_stripos($html, 'Baigiasi');
     if ($pos === false) return null;
 
-    // 2. Paimame gabaliuką teksto į priekį (kad apimtų datą ir tagus)
-    $chunk = mb_substr($html, $pos, 300);
-
-    // 3. Išvalome tagus (tampa "Baigiasi : Šiandien 15:26")
-    $clean = strip_tags($chunk);
-    
-    // 4. Išvalome tarpus ir specialius simbolius
+    $chunk = mb_substr($html, $pos, 400);
+    $clean = preg_replace('/<[^>]+>/', ' ', $chunk);
     $clean = html_entity_decode($clean);
     $clean = trim(preg_replace('/\s+/u', ' ', $clean));
 
-    // 5. Ieškome vieno iš 3 formatų
-    // Format 1: 2025-12-17 11:18
-    // Format 2: Šiandien 15:26
-    // Format 3: Rytoj 10:05
-    if (preg_match('/Baigiasi\s*:\s*(\d{4}-\d{2}-\d{2}(?:\s+\d{1,2}:\d{2})?|Šiandien\s+\d{1,2}:\d{2}|Rytoj\s+\d{1,2}:\d{2})/iu', $clean, $m)) {
+    // Ieškome: "Baigiasi: YYYY...", "Baigiasi: Šiandien..."
+    $regex = '/Baigiasi\s*:?\s*(\d{4}-\d{2}-\d{2}(?:\s+\d{1,2}:\d{2})?|Šiandien\s+\d{1,2}:\d{2}|Rytoj\s+\d{1,2}:\d{2})/iu';
+    
+    if (preg_match($regex, $clean, $m)) {
         return $m[1];
     }
     return null;
@@ -112,8 +120,8 @@ try {
             $shouldDelete = true;
             $reason = "404/Nepasiekiamas";
         } else {
-            // NAUJA LOGIKA: Naudojame extract_pirkis_date
-            $rawDate = extract_pirkis_date($html);
+            // Bandome rasti datą
+            $rawDate = extract_pirkis_date_cron($html);
             if ($rawDate) {
                 $ts = parse_date_cron($rawDate);
                 if ($ts) {
@@ -142,7 +150,6 @@ try {
                 $upd = $pdo->prepare("UPDATE products SET scraped_at = NOW(), expires_at = :exp WHERE id = :id");
                 $upd->execute([':exp' => $foundExpiryDate, ':id' => $item['id']]);
             } else {
-                // Jei datos neradome, tiesiog atnaujiname laiką
                 $pdo->prepare("UPDATE products SET scraped_at = NOW() WHERE id = ?")->execute([$item['id']]);
             }
             $updated++;
