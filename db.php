@@ -1,5 +1,5 @@
 <?php
-// db.php - Prisijungimas ir DB struktūra (Su Cooldown nustatymu)
+// db.php - Prisijungimas ir DB struktūra (Su Cooldown ir History palaikymu)
 
 // Nustatome Lietuvos laiką
 date_default_timezone_set('Europe/Vilnius');
@@ -99,12 +99,20 @@ function ensure_schema(PDO $pdo): void
             cycle_id VARCHAR(50) DEFAULT NULL,
             total_processed INT DEFAULT 0,
             history TEXT DEFAULT NULL,
-            cooldown_enabled TINYINT DEFAULT 0 -- NAUJAS STULPELIS (0 = išjungta pagal nutylėjimą)
+            cooldown_enabled TINYINT DEFAULT 0
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
         
+        // ID 1 = Scraperis
         "INSERT INTO scraper_state (id, start_pos, status, last_run, cycle_id, total_processed, history, cooldown_enabled)
          VALUES (1, 0, 'finished', 0, '', 0, '[]', 0)
          ON DUPLICATE KEY UPDATE id=1;",
+
+        // ID 2 = Expiry Checker (Galiojimas), ID 3 = Duplicates Cleaner (Dublikatai)
+        "INSERT INTO scraper_state (id, start_pos, status, last_run, cycle_id, total_processed, history, cooldown_enabled)
+         VALUES 
+         (2, 0, 'idle', 0, 'EXPIRY', 0, '[]', 0),
+         (3, 0, 'idle', 0, 'DUPLICATES', 0, '[]', 0)
+         ON DUPLICATE KEY UPDATE id=id;",
 
         "INSERT INTO hero_content (id, title, message, button_text, button_url, image_url, text_align, media_type, media_value)
         VALUES (1, 'Kolekcionierių bendruomenė', 'Atraskite monetas, banknotus ir kitus radinius vienoje modernioje erdvėje.', 'Peržiūrėti naujienas', 'news.php', '', 'left', 'image', '')
@@ -115,7 +123,7 @@ function ensure_schema(PDO $pdo): void
         try {
             $pdo->exec($sql);
         } catch (PDOException $e) {
-            // Ignoruojame
+            // Ignoruojame klaidas, jei lentelės jau yra
         }
     }
     
