@@ -1,12 +1,14 @@
 <?php
-// scraper.php - V28 (Dynamic Cooldown)
+// scraper.php - V29 (Explicit Unlock Fix)
 set_time_limit(0);
 ignore_user_abort(true);
 
 $lockFile = __DIR__ . '/scraper.lock';
 $fpLock = fopen($lockFile, 'w+');
+
+// Bandome užrakinti. Jei nepavyksta, vadinasi skriptas tikrai veikia kitame procese.
 if (!flock($fpLock, LOCK_EX | LOCK_NB)) {
-    die("SKIPPED: Skriptas jau veikia.");
+    die("SKIPPED: Skriptas jau veikia (failas užrakintas).");
 }
 
 require_once __DIR__ . '/db.php';
@@ -74,20 +76,28 @@ function save_db_state(PDO $pdo, array $state): void {
         ]);
 }
 
-function stopAndSave($pdo, $state, $currentStart, $reason) {
+// Funkcija tvarkingam uždarymui (atrakina failą prieš mirtį)
+function clean_exit($fpLock, $msg = '') {
+    flock($fpLock, LOCK_UN);
+    fclose($fpLock);
+    if ($msg) die($msg);
+    exit;
+}
+
+function stopAndSave($pdo, $state, $currentStart, $reason, $fpLock) {
     $state['start'] = $currentStart;
     $state['status'] = 'running';
     $state['last_run'] = time();
     save_db_state($pdo, $state);
-    die($reason);
+    clean_exit($fpLock, $reason);
 }
 
-function finish_cycle($state, $pdo, $minItemsToAllowDelete) {
+function finish_cycle($state, $pdo, $minItemsToAllowDelete, $fpLock) {
     $totalFound = (int)$state['total_processed'];
     
     // SAUGIKLIS
     if ($totalFound < 5 && $state['start'] < 100) {
-        stopAndSave($pdo, $state, $state['start'], "KLAIDA: Ciklas nutrauktas per anksti (rasta tik $totalFound).");
+        stopAndSave($pdo, $state, $state['start'], "KLAIDA: Ciklas nutrauktas per anksti (rasta tik $totalFound).", $fpLock);
     }
 
     $msg = "";
@@ -103,10 +113,6 @@ function finish_cycle($state, $pdo, $minItemsToAllowDelete) {
     array_unshift($hist, ['time' => time(), 'count' => ($msg === "" ? 0 : 1), 'msg' => $msg]); 
     $state['history'] = array_slice($hist, 0, 5);
     
-    // Čia svarbus momentas: 
-    // Jei cooldown įjungtas -> nustatome statusą 'finished'.
-    // Jei išjungtas -> nustatome 'running', kad nesustotų.
-    
     $cooldownEnabled = $state['cooldown_enabled'] ?? 0;
     
     if ($cooldownEnabled) {
@@ -121,18 +127,20 @@ function finish_cycle($state, $pdo, $minItemsToAllowDelete) {
     $state['cycle_id'] = uniqid('RUN_');
     
     save_db_state($pdo, $state);
-    die($msg . ($cooldownEnabled ? " (Ilsėsis)" : " (Perkrautas)"));
+    
+    // Čia svarbu: jei tai naršyklė, ji turi pamatyti žinutę ir pati persikrauti
+    clean_exit($fpLock, $msg . ($cooldownEnabled ? " (Ilsėsis)" : " (Perkrautas)"));
 }
 
 // --- LOGIKA ---
 
 if ($mode === 'cron') {
-    if (!isset($_GET['key']) || $_GET['key'] !== $secret) die('Blogas raktas.');
+    if (!isset($_GET['key']) || $_GET['key'] !== $secret) clean_exit($fpLock, 'Blogas raktas.');
 }
 
 $state = get_db_state($pdo);
 
-// Browser Reset
+// Browser Reset: jei rankiniu būdu nurodyta start=0, pradedam naują ciklą
 if ($mode === 'browser' && $startParam === 0) {
     $state = ['start' => 0, 'status' => 'running', 'last_run' => 0, 'cycle_id' => uniqid('RUN_'), 'total_processed' => 0, 'history' => $state['history'], 'cooldown_enabled' => $state['cooldown_enabled']];
     save_db_state($pdo, $state);
@@ -142,14 +150,12 @@ $start = ($mode === 'browser' && $startParam !== null) ? $startParam : $state['s
 
 // CRON Logika
 if ($mode === 'cron') {
-    // Dinaminis poilsio laikas
     $cooldownTime = ($state['cooldown_enabled'] ?? 0) ? 3600 : 0;
 
     if ($state['status'] === 'finished') {
         if ((time() - $state['last_run']) < $cooldownTime) {
-            die("Ilsisi (liko " . round(($cooldownTime - (time() - $state['last_run']))/60) . " min).");
+            clean_exit($fpLock, "Ilsisi (liko " . round(($cooldownTime - (time() - $state['last_run']))/60) . " min).");
         }
-        // Laikas praėjo, pradedam iš naujo
         $state['start'] = 0; 
         $state['status'] = 'running'; 
         $state['total_processed'] = 0; 
@@ -166,14 +172,14 @@ $touchStmt = $pdo->prepare("UPDATE products SET cycle_id=?, scraped_at=NOW() WHE
 $startTime = microtime(true);
 
 do {
-    if ($start > $maxLimit) { finish_cycle($state, $pdo, $minItemsToAllowDelete); }
+    if ($start > $maxLimit) { finish_cycle($state, $pdo, $minItemsToAllowDelete, $fpLock); }
     if ($mode === 'cron' && (microtime(true) - $startTime) >= $cronTimeLimit) {
-        stopAndSave($pdo, $state, $start, "Laikas baigėsi ($start).");
+        stopAndSave($pdo, $state, $start, "Laikas baigėsi ($start).", $fpLock);
     }
 
     $html = fetchUrl($baseUrl . '?start=' . $start);
     if (!$html) {
-        stopAndSave($pdo, $state, $start, "Klaida: Nepavyko gauti HTML. Bandysim vėl.");
+        stopAndSave($pdo, $state, $start, "Klaida: Nepavyko gauti HTML. Bandysim vėl.", $fpLock);
     }
 
     $dom = new DOMDocument(); @$dom->loadHTML('<?xml encoding="UTF-8">' . $html);
@@ -182,9 +188,9 @@ do {
 
     if ($nodes->length === 0) {
         if ($start == 0) {
-            stopAndSave($pdo, $state, 0, "Klaida: 0 prekių startiniame puslapyje.");
+            stopAndSave($pdo, $state, 0, "Klaida: 0 prekių startiniame puslapyje.", $fpLock);
         }
-        finish_cycle($state, $pdo, $minItemsToAllowDelete);
+        finish_cycle($state, $pdo, $minItemsToAllowDelete, $fpLock);
         break;
     }
 
@@ -239,9 +245,25 @@ do {
     }
 
     $start += $perPage;
+    
+    // --- BROWSER MODE REFRESH FIX ---
     if ($mode === 'browser') {
-        $state['start'] = $start; $state['status'] = 'running'; save_db_state($pdo, $state);
-        echo "<script>window.location.href='?start=$start';</script>"; exit;
+        $state['start'] = $start; 
+        $state['status'] = 'running'; 
+        save_db_state($pdo, $state);
+        
+        // SVARBU: Atrakiname failą prieš peradresavimą!
+        flock($fpLock, LOCK_UN);
+        fclose($fpLock);
+
+        echo " OK<br>";
+        if (ob_get_level() > 0) { ob_flush(); flush(); }
+        
+        // Maža pauzė serverio ramybei
+        usleep(200000); 
+        
+        echo "<script>window.location.href='?start=$start';</script>"; 
+        exit;
     }
 
 } while ($mode === 'cron');
