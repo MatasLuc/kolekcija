@@ -1,7 +1,7 @@
 <?php
-// MySQL connection and schema bootstrapper
+// db.php - Prisijungimas ir DB struktūros valdymas
 
-// 1. Load environment variables
+// 1. Užkrauname .env kintamuosius
 $envFile = __DIR__ . '/.env';
 if (file_exists($envFile) && is_readable($envFile)) {
     $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
@@ -30,12 +30,11 @@ $dbPass = getenv('DB_PASS');
 $dbPort = getenv('DB_PORT') ?: '3306';
 
 if (!$dbName || !$dbUser) {
-    // Saugumo sumetimais geriau nerodyti konkrečios konfigūracijos klaidos viešai
     error_log('Klaida: Nenurodyti DB_NAME arba DB_USER faile .env');
     die('Įvyko sistemos konfigūracijos klaida. Patikrinkite serverio nustatymus.');
 }
 
-// 2. Connect directly to the database
+// 2. Prisijungimas
 try {
     $dsn = "mysql:host={$dbHost};port={$dbPort};dbname={$dbName};charset=utf8mb4";
     $pdo = new PDO($dsn, $dbUser, $dbPass, [
@@ -43,13 +42,11 @@ try {
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
     ]);
 } catch (PDOException $e) {
-    // SVARBU: Gamybinėje aplinkoje (production) klaidą rašome į log failą,
-    // o vartotojui rodome bendrinį pranešimą, kad neatskleistume DB struktūros.
     error_log('DB Connection Error: ' . $e->getMessage()); 
     die('Įvyko sistemos klaida jungiantis prie duomenų bazės. Pabandykite vėliau.');
 }
 
-// 3. Ensure schema exists (su klaidų gaudymu)
+// 3. Struktūros užtikrinimas
 function ensure_schema(PDO $pdo): void
 {
     $statements = [
@@ -92,9 +89,25 @@ function ensure_schema(PDO $pdo): void
             CONSTRAINT fk_news_images_news FOREIGN KEY (news_id) REFERENCES news(id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
         
-        // Initial Seed
+        // --- NAUJA LENTELĖ SCRAPER BŪSENAI ---
+        "CREATE TABLE IF NOT EXISTS scraper_state (
+            id INT PRIMARY KEY DEFAULT 1,
+            start_pos INT DEFAULT 0,
+            status VARCHAR(50) DEFAULT 'finished',
+            last_run INT DEFAULT 0,
+            cycle_id VARCHAR(50) DEFAULT NULL,
+            total_processed INT DEFAULT 0,
+            history TEXT DEFAULT NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
+
+        // Inicializacija: įterpiame vieną įrašą, jei jo nėra
+        "INSERT INTO scraper_state (id, start_pos, status, last_run, cycle_id, total_processed, history)
+         VALUES (1, 0, 'finished', 0, '', 0, '[]')
+         ON DUPLICATE KEY UPDATE id=1;",
+
+        // Hero Content Default
         "INSERT INTO hero_content (id, title, message, button_text, button_url, image_url, text_align, media_type, media_value)
-        VALUES (1, 'MŪSŲ NAUJIENOS', 'Atraskite monetas, banknotus ir kitus radinius vienoje modernioje erdvėje.', 'Peržiūrėti naujienas', 'news.php', '', 'left', 'image', '')
+        VALUES (1, 'Kolekcionierių bendruomenė', 'Atraskite monetas, banknotus ir kitus radinius vienoje modernioje erdvėje.', 'Peržiūrėti naujienas', 'news.php', '', 'left', 'image', '')
         ON DUPLICATE KEY UPDATE title = VALUES(title);"
     ];
 
@@ -102,31 +115,15 @@ function ensure_schema(PDO $pdo): void
         try {
             $pdo->exec($sql);
         } catch (PDOException $e) {
-            // Ignoruojame klaidas, jei lentelės jau yra
             error_log("SQL Schema Warning: " . $e->getMessage());
-        }
-    }
-
-    // Migrations
-    $migrations = [
-        "ALTER TABLE hero_content ADD COLUMN text_align ENUM('left','center','right') NOT NULL DEFAULT 'left' AFTER image_url",
-        "ALTER TABLE hero_content ADD COLUMN media_type ENUM('image','video','color') NOT NULL DEFAULT 'image' AFTER text_align",
-        "ALTER TABLE hero_content ADD COLUMN media_value VARCHAR(255) DEFAULT NULL AFTER media_type",
-    ];
-
-    foreach ($migrations as $sql) {
-        try {
-            $pdo->exec($sql);
-        } catch (PDOException $e) {
-            // Column probably exists; ignore
         }
     }
 }
 
-// Paleidžiame schemos kūrimą
 try {
     ensure_schema($pdo);
 } catch (Exception $e) {
     error_log('Schema Error: ' . $e->getMessage());
     die('Įvyko sistemos klaida nustatant duomenų bazę.');
 }
+?>
