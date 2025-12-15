@@ -7,7 +7,7 @@ require_once __DIR__ . '/functions.php'; // Reikalinga log_cron_history funkcija
 
 // --- KONFIGŪRACIJA ---
 $secretKey = 'ManoSlaptasRaktas123'; // Turi sutapti su jūsų raktu
-$itemsPerRun = 50; // Kiek prekių tikrinti per vieną kartą
+$itemsPerRun = 150; // Kiek prekių tikrinti per vieną kartą
 $logFile = __DIR__ . '/expiry.log'; // Papildomas failinis logas (jei reikia)
 
 // --- APSAUGA ---
