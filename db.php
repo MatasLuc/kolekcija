@@ -1,5 +1,5 @@
 <?php
-// db.php - Prisijungimas ir DB struktūra (Su Cooldown ir History palaikymu)
+// db.php - Prisijungimas ir DB struktūra (Su Cooldown, History ir Expiry palaikymu)
 
 // Nustatome Lietuvos laiką
 date_default_timezone_set('Europe/Vilnius');
@@ -127,12 +127,18 @@ function ensure_schema(PDO $pdo): void
         }
     }
     
-    // Papildomai bandome pridėti stulpelį, jei lentelė jau sukurta seniau
+    // ATNAUJINIMAI (Migration logic)
+    
+    // 1. Cooldown stulpelis
     try {
         $pdo->exec("ALTER TABLE scraper_state ADD COLUMN cooldown_enabled TINYINT DEFAULT 0");
-    } catch (PDOException $e) {
-        // Stulpelis jau yra, ignoruojame
-    }
+    } catch (PDOException $e) { }
+
+    // 2. Expires_at stulpelis produktams (SVARBU: Nauja dalis)
+    try {
+        $pdo->exec("ALTER TABLE products ADD COLUMN expires_at TIMESTAMP NULL DEFAULT NULL");
+        $pdo->exec("CREATE INDEX idx_expires_at ON products(expires_at)");
+    } catch (PDOException $e) { }
 }
 
 try {
