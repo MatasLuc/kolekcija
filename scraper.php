@@ -1,38 +1,36 @@
 <?php
-// scraper.php - V26 (Timezone Fix & Robust Logic)
+// scraper.php - V28 (Dynamic Cooldown)
 set_time_limit(0);
 ignore_user_abort(true);
 
-// Užraktas
 $lockFile = __DIR__ . '/scraper.lock';
 $fpLock = fopen($lockFile, 'w+');
 if (!flock($fpLock, LOCK_EX | LOCK_NB)) {
     die("SKIPPED: Skriptas jau veikia.");
 }
 
-require_once __DIR__ . '/db.php'; // Čia jau yra date_default_timezone_set
+require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/functions.php'; 
 
-// KONFIGŪRACIJA
+// --- KONFIGŪRACIJA ---
 $shopId = '30147'; 
 $baseUrl = "https://pirkis.lt/shops/{$shopId}-e-Kolekcija.html";
 $perPage = 20;
 $maxLimit = 3000;
 $cronTimeLimit = 25;    
-$cooldownTime = 3600;   
 $minItemsToAllowDelete = 100;
 $secret = 'ManoSlaptasRaktas123'; 
 
 $mode = isset($_GET['mode']) ? $_GET['mode'] : 'browser'; 
 $startParam = isset($_GET['start']) ? (int)$_GET['start'] : null;
 
-// User-Agents
 $userAgents = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/119.0.0.0 Safari/537.36',
 ];
 
-// FUNKCIJOS
+// --- FUNKCIJOS ---
+
 function fetchUrl($url, $retries = 3) {
     global $userAgents;
     $attempt = 0;
@@ -56,14 +54,15 @@ function fetchUrl($url, $retries = 3) {
 
 function get_db_state(PDO $pdo): array {
     $row = $pdo->query("SELECT * FROM scraper_state WHERE id = 1")->fetch(PDO::FETCH_ASSOC);
-    if (!$row) return ['start' => 0, 'status' => 'finished', 'last_run' => 0, 'cycle_id' => '', 'total_processed' => 0, 'history' => []];
+    if (!$row) return ['start' => 0, 'status' => 'finished', 'last_run' => 0, 'cycle_id' => '', 'total_processed' => 0, 'history' => [], 'cooldown_enabled' => 0];
     return [
         'start' => (int)$row['start_pos'],
         'status' => $row['status'],
         'last_run' => (int)$row['last_run'],
         'cycle_id' => $row['cycle_id'],
         'total_processed' => (int)$row['total_processed'],
-        'history' => json_decode($row['history'] ?? '[]', true) ?: []
+        'history' => json_decode($row['history'] ?? '[]', true) ?: [],
+        'cooldown_enabled' => (int)($row['cooldown_enabled'] ?? 0)
     ];
 }
 
@@ -86,54 +85,66 @@ function stopAndSave($pdo, $state, $currentStart, $reason) {
 function finish_cycle($state, $pdo, $minItemsToAllowDelete) {
     $totalFound = (int)$state['total_processed'];
     
-    // SAUGIKLIS: Jei radome labai mažai prekių, galbūt įvyko klaida?
-    // Neleidžiame pereiti į "Finished", jei tai buvo tik pradžia
+    // SAUGIKLIS
     if ($totalFound < 5 && $state['start'] < 100) {
-        // Tiesiog sustabdome kaip klaidą, kad kitą kartą Cron bandytų vėl, o ne ilsėtųsi
-        stopAndSave($pdo, $state, $state['start'], "KLAIDA: Ciklas nutrauktas per anksti (rasta tik $totalFound). Resetinkite arba palaukite.");
+        stopAndSave($pdo, $state, $state['start'], "KLAIDA: Ciklas nutrauktas per anksti (rasta tik $totalFound).");
     }
 
+    $msg = "";
     if ($totalFound < $minItemsToAllowDelete) {
-        // Resetinam, bet netrinam
-        $state['start'] = 0;
-        $state['status'] = 'finished';
-        $state['last_run'] = time();
-        $state['total_processed'] = 0;
-        save_db_state($pdo, $state);
-        die("SAUGIKLIS: Rasta tik $totalFound. Trynimas atšauktas.");
+        $msg = "SAUGIKLIS: Rasta tik $totalFound. Trynimas atšauktas.";
+    } else {
+        $pdo->prepare("DELETE FROM products WHERE source='pirkis' AND (cycle_id != ? OR cycle_id IS NULL)")->execute([$state['cycle_id']]);
+        $deleted = $pdo->query("SELECT ROW_COUNT()")->fetchColumn();
+        $msg = "BAIGTA. Ištrinta: $deleted.";
     }
 
-    $pdo->prepare("DELETE FROM products WHERE source='pirkis' AND (cycle_id != ? OR cycle_id IS NULL)")->execute([$state['cycle_id']]);
-    $deleted = $pdo->query("SELECT ROW_COUNT()")->fetchColumn();
-    
     $hist = $state['history'] ?? [];
-    array_unshift($hist, ['time' => time(), 'count' => $deleted]);
+    array_unshift($hist, ['time' => time(), 'count' => ($msg === "" ? 0 : 1), 'msg' => $msg]); 
     $state['history'] = array_slice($hist, 0, 5);
+    
+    // Čia svarbus momentas: 
+    // Jei cooldown įjungtas -> nustatome statusą 'finished'.
+    // Jei išjungtas -> nustatome 'running', kad nesustotų.
+    
+    $cooldownEnabled = $state['cooldown_enabled'] ?? 0;
+    
+    if ($cooldownEnabled) {
+        $state['status'] = 'finished';
+    } else {
+        $state['status'] = 'running';
+    }
+
     $state['start'] = 0;
-    $state['status'] = 'finished';
     $state['last_run'] = time();
     $state['total_processed'] = 0;
+    $state['cycle_id'] = uniqid('RUN_');
+    
     save_db_state($pdo, $state);
-    die("BAIGTA. Ištrinta: $deleted.");
+    die($msg . ($cooldownEnabled ? " (Ilsėsis)" : " (Perkrautas)"));
 }
 
-// LOGIKA
+// --- LOGIKA ---
+
 if ($mode === 'cron') {
     if (!isset($_GET['key']) || $_GET['key'] !== $secret) die('Blogas raktas.');
 }
 
 $state = get_db_state($pdo);
 
-// Jei browser mode ir start=0 -> RESET
+// Browser Reset
 if ($mode === 'browser' && $startParam === 0) {
-    $state = ['start' => 0, 'status' => 'running', 'last_run' => 0, 'cycle_id' => uniqid('RUN_'), 'total_processed' => 0, 'history' => $state['history']];
+    $state = ['start' => 0, 'status' => 'running', 'last_run' => 0, 'cycle_id' => uniqid('RUN_'), 'total_processed' => 0, 'history' => $state['history'], 'cooldown_enabled' => $state['cooldown_enabled']];
     save_db_state($pdo, $state);
 }
 
 $start = ($mode === 'browser' && $startParam !== null) ? $startParam : $state['start'];
 
+// CRON Logika
 if ($mode === 'cron') {
-    // Jei statusas finished, tikrinam laiką
+    // Dinaminis poilsio laikas
+    $cooldownTime = ($state['cooldown_enabled'] ?? 0) ? 3600 : 0;
+
     if ($state['status'] === 'finished') {
         if ((time() - $state['last_run']) < $cooldownTime) {
             die("Ilsisi (liko " . round(($cooldownTime - (time() - $state['last_run']))/60) . " min).");
@@ -148,9 +159,7 @@ if ($mode === 'cron') {
     }
 }
 
-// Jei statusas 'running', bet start=0 ir cycle_id senas (po reset)
-// Admin reset nustato last_run=0, tad Cron turėtų pasileisti.
-
+// SQL
 $upsertStmt = $pdo->prepare("INSERT INTO products (external_id, title, price, image_url, url, country, category, cycle_id, source, scraped_at) VALUES (:eid, :title, :price, :img, :url, :country, :category, :cid, 'pirkis', NOW()) ON DUPLICATE KEY UPDATE title=VALUES(title), price=VALUES(price), image_url=IF(VALUES(image_url)!='',VALUES(image_url),image_url), country=VALUES(country), category=VALUES(category), cycle_id=VALUES(cycle_id), scraped_at=NOW()");
 $touchStmt = $pdo->prepare("UPDATE products SET cycle_id=?, scraped_at=NOW() WHERE external_id=? AND source='pirkis'");
 
@@ -164,8 +173,7 @@ do {
 
     $html = fetchUrl($baseUrl . '?start=' . $start);
     if (!$html) {
-        if ($mode === 'cron') stopAndSave($pdo, $state, $start, "Klaida: Nepavyko gauti HTML.");
-        die("Klaida: HTML tuščias.");
+        stopAndSave($pdo, $state, $start, "Klaida: Nepavyko gauti HTML. Bandysim vėl.");
     }
 
     $dom = new DOMDocument(); @$dom->loadHTML('<?xml encoding="UTF-8">' . $html);
@@ -174,9 +182,7 @@ do {
 
     if ($nodes->length === 0) {
         if ($start == 0) {
-            // SVARBU: Jei pirmame puslapyje 0 prekių, NEBAIGIAME ciklo, o tiesiog sustojame.
-            // Taip išvengsime "Finished" statuso, jei puslapis laikinai neveikia.
-            stopAndSave($pdo, $state, 0, "Klaida: 0 prekių startiniame puslapyje. Ciklas pristabdytas.");
+            stopAndSave($pdo, $state, 0, "Klaida: 0 prekių startiniame puslapyje.");
         }
         finish_cycle($state, $pdo, $minItemsToAllowDelete);
         break;
