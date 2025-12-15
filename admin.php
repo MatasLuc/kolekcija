@@ -282,6 +282,7 @@ $usersList = $pdo->query('SELECT * FROM users ORDER BY name ASC')->fetchAll();
 // Scraper Būsena ir Produktai
 $productStats = [];
 $scraperState = ['start' => 0, 'status' => 'Nežinoma', 'last_run' => 0, 'history' => [], 'cooldown_enabled' => 0];
+$otherJobsData = []; // ID 2 ir ID 3 duomenys
 
 if ($activeTab === 'products') {
     $productStats['total'] = $pdo->query("SELECT COUNT(*) FROM products")->fetchColumn();
@@ -289,7 +290,7 @@ if ($activeTab === 'products') {
     $productStats['with_category'] = $pdo->query("SELECT COUNT(*) FROM products WHERE category IS NOT NULL AND category != ''")->fetchColumn();
     $productStats['without_country'] = $productStats['total'] - $productStats['with_country'];
     
-    // GAVIMAS IŠ DUOMENŲ BAZĖS
+    // GAVIMAS IŠ DUOMENŲ BAZĖS (Scraper ID 1)
     $sStmt = $pdo->query("SELECT * FROM scraper_state WHERE id = 1");
     $sRow = $sStmt->fetch();
     if ($sRow) {
@@ -301,6 +302,15 @@ if ($activeTab === 'products') {
             'total_processed' => $sRow['total_processed'],
             'history' => json_decode($sRow['history'], true) ?: [],
             'cooldown_enabled' => (int)($sRow['cooldown_enabled'] ?? 0)
+        ];
+    }
+    
+    // GAVIMAS IŠ DUOMENŲ BAZĖS (Expiry ID 2, Duplicates ID 3)
+    $otherJobs = $pdo->query("SELECT id, last_run, history FROM scraper_state WHERE id IN (2, 3) ORDER BY id ASC")->fetchAll();
+    foreach ($otherJobs as $j) {
+        $otherJobsData[$j['id']] = [
+            'last_run' => $j['last_run'],
+            'history' => json_decode($j['history'], true) ?: []
         ];
     }
 }
@@ -566,6 +576,54 @@ render_nav();
                             </table>
                         </div>
                     <?php endif; ?>
+
+                    <hr style="margin: 30px 0; border: 0; border-top: 2px dashed #eee;">
+                    
+                    <h3>Sistemos priežiūros žurnalai</h3>
+                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap:20px; margin-bottom:20px;">
+                        
+                        <div style="background:#fff; border:1px solid #dcedc8; border-radius:8px; overflow:hidden;">
+                            <div style="background:#f1f8e9; padding:10px 15px; border-bottom:1px solid #dcedc8; display:flex; justify-content:space-between; align-items:center;">
+                                <strong style="color:#33691e;">Galiojimo tikrinimas (Expiry)</strong>
+                                <small style="color:#666;">
+                                    <?php echo isset($otherJobsData[2]['last_run']) && $otherJobsData[2]['last_run'] > 0 ? date('m-d H:i', $otherJobsData[2]['last_run']) : '-'; ?>
+                                </small>
+                            </div>
+                            <table style="width:100%; font-size:0.8rem; border-collapse:collapse;">
+                                <?php if (empty($otherJobsData[2]['history'])): ?>
+                                    <tr><td style="padding:10px; text-align:center; color:#999;">Įrašų nėra</td></tr>
+                                <?php else: ?>
+                                    <?php foreach ($otherJobsData[2]['history'] as $h): ?>
+                                    <tr style="border-bottom:1px solid #f1f1f1;">
+                                        <td style="padding:6px 10px; color:#555; width:90px;"><?php echo date('m-d H:i', $h['time']); ?></td>
+                                        <td style="padding:6px 10px;"><?php echo e($h['msg']); ?></td>
+                                    </tr>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </table>
+                        </div>
+
+                        <div style="background:#fff; border:1px solid #b3e5fc; border-radius:8px; overflow:hidden;">
+                            <div style="background:#e1f5fe; padding:10px 15px; border-bottom:1px solid #b3e5fc; display:flex; justify-content:space-between; align-items:center;">
+                                <strong style="color:#01579b;">Dublikatų valymas</strong>
+                                <small style="color:#666;">
+                                    <?php echo isset($otherJobsData[3]['last_run']) && $otherJobsData[3]['last_run'] > 0 ? date('m-d H:i', $otherJobsData[3]['last_run']) : '-'; ?>
+                                </small>
+                            </div>
+                            <table style="width:100%; font-size:0.8rem; border-collapse:collapse;">
+                                <?php if (empty($otherJobsData[3]['history'])): ?>
+                                    <tr><td style="padding:10px; text-align:center; color:#999;">Įrašų nėra</td></tr>
+                                <?php else: ?>
+                                    <?php foreach ($otherJobsData[3]['history'] as $h): ?>
+                                    <tr style="border-bottom:1px solid #f1f1f1;">
+                                        <td style="padding:6px 10px; color:#555; width:90px;"><?php echo date('m-d H:i', $h['time']); ?></td>
+                                        <td style="padding:6px 10px;"><?php echo e($h['msg']); ?></td>
+                                    </tr>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </table>
+                        </div>
+                    </div>
 
                     <div style="display:flex; gap:10px; flex-wrap:wrap;">
                         <a href="scraper.php" target="_blank" class="cta" style="background:#000; color:#fff; text-decoration:none; display:inline-block; padding:8px 16px; border-radius:6px; font-size:0.9rem;">
