@@ -529,7 +529,7 @@ render_nav();
                                 <tbody>
                                     <?php foreach ($expiringProducts as $exp): ?>
                                         <?php
-                                        // Pavadinimo valymas (Regex kaip Shop.php)
+                                        // PAVADINIMO VALYMAS (KAIP PARDUOTUVĖJE)
                                         $displayTitle = $exp['title'];
                                         $displayTitle = preg_replace('/(?:_\s*)+/', ' ', $displayTitle);
                                         $displayTitle = preg_replace('/(?:\.\s*){2,}/', ' ', $displayTitle);
