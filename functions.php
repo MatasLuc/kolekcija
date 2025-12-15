@@ -94,7 +94,37 @@ function require_csrf(): void
     }
 }
 
-// --- ŠALIŲ ATPAŽINIMO FUNKCIJA (Atnaujinta) ---
+// --- CRON ISTORIJOS VALDYMAS (NAUJA) ---
+function log_cron_history(int $stateId, string $message, int $deletedCount = 0): void {
+    global $pdo;
+    
+    // 1. Gauname esamą istoriją
+    $stmt = $pdo->prepare("SELECT history FROM scraper_state WHERE id = ?");
+    $stmt->execute([$stateId]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    $history = [];
+    if ($row && !empty($row['history'])) {
+        $history = json_decode($row['history'], true) ?: [];
+    }
+
+    // 2. Sukuriame naują įrašą
+    $newEntry = [
+        'time' => time(),
+        'msg' => $message,
+        'count' => $deletedCount
+    ];
+
+    // 3. Pridedame į priekį ir paliekame tik 5 naujausius
+    array_unshift($history, $newEntry);
+    $history = array_slice($history, 0, 5);
+
+    // 4. Išsaugome atgal į DB ir atnaujiname last_run
+    $update = $pdo->prepare("UPDATE scraper_state SET history = ?, last_run = ?, status = 'finished' WHERE id = ?");
+    $update->execute([json_encode($history), time(), $stateId]);
+}
+
+// --- ŠALIŲ ATPAŽINIMO FUNKCIJA (PILNA) ---
 function detect_country(string $title): ?string {
     // Išsivalome simbolius geresnei paieškai
     $cleanTitle = preg_replace('/[^\p{L}\p{N}\s]/u', ' ', mb_strtolower($title));
@@ -309,27 +339,15 @@ function detect_country(string $title): ?string {
     }
     return null;
 }
+
 // --- KATEGORIJOS ATPAŽINIMO FUNKCIJA ---
 function detect_category(string $url): ?string {
-    // Tikriname, ar nuorodoje yra specifinis fragmentas
-    if (strpos($url, '3520-numizmatika-monetos') !== false) {
-        return 'Numizmatika (monetos)';
-    }
-    if (strpos($url, '3580-bonistika-banknotai') !== false) {
-        return 'Bonistika (banknotai)';
-    }
-    if (strpos($url, '3530-faleristika-ordinai-medaliai-zenkliukai') !== false) {
-        return 'Faleristika (ordinai, medaliai, ženkliukai)';
-    }
-    if (strpos($url, '3535-filumenistika-degtukai-etiketes') !== false) {
-        return 'Filumenistika (degtukai, etiketės)';
-    }
-    if (strpos($url, '3540-kiti-daiktai-kolekcionavimui') !== false) {
-        return 'Kiti daiktai kolekcionavimui';
-    }
-    if (strpos($url, '656094-reikmenys-kolekcionavimui') !== false) {
-        return 'Reikmenys kolekcionavimui';
-    }
-    
-    return null; // Kategorija neatpažinta
+    if (strpos($url, '3520-numizmatika-monetos') !== false) return 'Numizmatika (monetos)';
+    if (strpos($url, '3580-bonistika-banknotai') !== false) return 'Bonistika (banknotai)';
+    if (strpos($url, '3530-faleristika-ordinai-medaliai-zenkliukai') !== false) return 'Faleristika (ordinai, medaliai, ženkliukai)';
+    if (strpos($url, '3535-filumenistika-degtukai-etiketes') !== false) return 'Filumenistika (degtukai, etiketės)';
+    if (strpos($url, '3540-kiti-daiktai-kolekcionavimui') !== false) return 'Kiti daiktai kolekcionavimui';
+    if (strpos($url, '656094-reikmenys-kolekcionavimui') !== false) return 'Reikmenys kolekcionavimui';
+    return null;
 }
+?>
